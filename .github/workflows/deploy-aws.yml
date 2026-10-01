@@ -1,12 +1,11 @@
 name: deploy-aws
 
-# main に画面の変更が入ったら AWS に配る。PR では文法チェックだけ。
+# PR では確認だけ。main に入ったら、コンテナと画面を AWS に配る。
+# （SQL は自動では流しません。aws/run-migrator.sh で手動実行）
 on:
   push:
     branches: [main]
-    paths: ["1_画面/**", "aws/deploy.sh", ".github/workflows/deploy-aws.yml"]
   pull_request:
-    paths: ["1_画面/**"]
   workflow_dispatch:
 
 permissions:
@@ -25,21 +24,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: node --check
+      - name: 画面の JS（node --check）
         run: for f in 1_画面/*.js; do node --check "$f"; done
+      - name: スクリプトの文法
+        run: |
+          for f in aws/*.sh; do bash -n "$f"; done
+          sh -n aws/migrator/migrate.sh
+          node --check aws/tools/copy-storage.mjs
+      - name: CloudFormation
+        run: |
+          pip install --quiet cfn-lint
+          cfn-lint aws/template.yaml -i W1030
 
   deploy:
     needs: check
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     environment: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-1' }}
+      STACK: ${{ vars.AWS_STACK_NAME || 'dandori-night' }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'ap-northeast-1' }}
-      - name: deploy
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-1' }}
-        run: bash aws/deploy.sh "${{ vars.AWS_STACK_NAME || 'dandori-night' }}"
+          aws-region: ${{ env.AWS_REGION }}
+      - name: コンテナ（gateway / functions / migrator）
+        run: bash aws/build-images.sh latest
+      - name: 画面
+        run: bash aws/deploy.sh

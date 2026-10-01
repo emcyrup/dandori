@@ -1,30 +1,85 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  ナイトだんどり 画面（1_画面）を S3 + CloudFront で配信する。
-  データベース・ログイン・サーバー処理は引き続き Supabase を使う。
+  ナイトだんどり 一式を AWS にまとめる。
+  画面 = S3 + CloudFront / データベース = RDS PostgreSQL /
+  ログイン・データの受け口・ファイル・サーバー処理 = ECS Fargate（Supabase と同じ部品）
 
+# ----------------------------------------------------------------------------
+#  パラメータ
+# ----------------------------------------------------------------------------
 Parameters:
+  DesiredCount:
+    Type: Number
+    Default: 0
+    AllowedValues: [0, 1, 2]
+    Description: >-
+      API サーバーの台数。初回は 0 で作り、イメージを ECR に入れてから 1 にする。
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: 自前イメージ（gateway / functions / migrator）のタグ
   DomainName:
     Type: String
     Default: ""
-    Description: >-
-      独自ドメイン（例 night.example.jp）。空なら xxxx.cloudfront.net のまま使う。
+    Description: 独自ドメイン（例 night.example.jp）。空なら xxxx.cloudfront.net のまま
   AcmCertificateArn:
     Type: String
     Default: ""
+    Description: DomainName を使うときの証明書 ARN（必ず us-east-1 で発行したもの）
+  DbEngineVersion:
+    Type: String
+    Default: "17.11"
     Description: >-
-      DomainName を使うときの証明書 ARN。必ず us-east-1（バージニア北部）で発行したもの。
+      PostgreSQL のバージョン。自動で小さな更新が入るので、
+      スタックを更新するときは「今の RDS のバージョン」以上を指定する。
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    Description: RDS の大きさ。お店が増えたら db.t4g.small などへ
+  DbMultiAZ:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: true にすると RDS を2か所に置く（費用はおよそ倍、止まりにくくなる）
+  SmtpHost:
+    Type: String
+    Default: email-smtp.ap-northeast-1.amazonaws.com
+    Description: パスワード再設定・招待メールの送信サーバー（Amazon SES の SMTP）
+  SmtpPort:
+    Type: Number
+    Default: 587
+  SmtpAdminEmail:
+    Type: String
+    Default: ""
+    Description: メールの送り主アドレス（SES で認証済みのもの）
+  SmtpSenderName:
+    Type: String
+    Default: ナイトだんどり
+  OutboxSchedule:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: >-
+      送信箱（LINE・メール）を5分ごとに自動で送るか。
+      Supabase 版で pg_cron に入れていた処理の代わり。
   GitHubRepo:
     Type: String
     Default: ""
-    Description: >-
-      GitHub Actions から自動デプロイするときのリポジトリ（例 emcyrup/dandori）。空なら作らない。
+    Description: GitHub Actions から自動デプロイするリポジトリ（例 emcyrup/dandori）。空なら作らない
   CreateGitHubOidcProvider:
     Type: String
     Default: "true"
     AllowedValues: ["true", "false"]
-    Description: >-
-      このAWSアカウントに GitHub の OIDC プロバイダがまだ無ければ true。既にあれば false。
+    Description: このアカウントに GitHub の OIDC プロバイダがまだ無ければ true
+  PostgrestImage:
+    Type: String
+    Default: public.ecr.aws/supabase/postgrest:v14.17
+  GotrueImage:
+    Type: String
+    Default: public.ecr.aws/supabase/gotrue:v2.196.0
+  StorageImage:
+    Type: String
+    Default: public.ecr.aws/supabase/storage-api:v1.74.0
 
 Rules:
   DomainNeedsCertificate:
@@ -39,8 +94,324 @@ Conditions:
   MakeOidc: !And
     - !Condition HasGitHub
     - !Equals [!Ref CreateGitHubOidcProvider, "true"]
+  IsMultiAZ: !Equals [!Ref DbMultiAZ, "true"]
 
 Resources:
+  # ==========================================================================
+  #  ネットワーク
+  #   public  … API サーバー（Fargate）。外への通信（AI・LINE・メール）に使う。
+  #             入ってくる通信は ALB からだけ許可。NAT を置かないので安い。
+  #   private … RDS と ALB。インターネットからは直接届かない。
+  # ==========================================================================
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.40.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: [{ Key: Name, Value: !Ref "AWS::StackName" }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-public-a" }]
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.1.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-public-b" }]
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-private-a" }]
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.11.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-private-b" }]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+
+  PrivateSubnetARoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: internal ALB (CloudFront VPC origin only)
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        # CloudFront の VPC オリジンは、この VPC の中から届く
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 10.40.0.0/16
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: API tasks (from ALB only) and migrator
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS (from API tasks only)
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  # ==========================================================================
+  #  秘密の値（すべて Secrets Manager。ソースには一切書かない）
+  # ==========================================================================
+  JwtSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: ログインの鍵に署名する秘密（Supabase の JWT Secret にあたる）
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: jwt_secret
+        PasswordLength: 48
+        ExcludePunctuation: true
+
+  AuthenticatorPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"authenticator"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  AuthAdminPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"supabase_auth_admin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  StorageAdminPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"supabase_storage_admin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  DbUrls:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: 各部品の DB 接続文字列（パスワード入り）
+      SecretString: !Sub
+        - '{"postgrest":"postgres://authenticator:${A}@${H}:5432/postgres?sslmode=require","gotrue":"postgres://supabase_auth_admin:${G}@${H}:5432/postgres?sslmode=require","storage":"postgres://supabase_storage_admin:${S}@${H}:5432/postgres?sslmode=require"}'
+        - H: !GetAtt Database.Endpoint.Address
+          A: !Sub "{{resolve:secretsmanager:${AuthenticatorPassword}:SecretString:password}}"
+          G: !Sub "{{resolve:secretsmanager:${AuthAdminPassword}:SecretString:password}}"
+          S: !Sub "{{resolve:secretsmanager:${StorageAdminPassword}:SecretString:password}}"
+
+  ApiKeys:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: anon キー（画面用・公開前提）と service_role キー（サーバー専用）
+      SecretString: !Sub '{"anon_key":"${KeyGen.AnonKey}","service_role_key":"${KeyGen.ServiceRoleKey}"}'
+
+  AppSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: >-
+        Edge Functions の鍵。Supabase の Functions Secrets にあたる。
+        使うものだけ値を入れる（空のままでよい）。
+      SecretString: '{"ANTHROPIC_API_KEY":"","GEMINI_API_KEY":"","OPENAI_API_KEY":"","PIXABAY_API_KEY":""}'
+
+  SmtpCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: SES の SMTP ユーザー名とパスワード（SES コンソールで発行して入れる）
+      SecretString: '{"username":"","password":""}'
+
+  SourceDb:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: >-
+        移行元 Supabase の接続文字列（Session pooler の URI）。移行が終わったら空に戻す。
+      SecretString: '{"url":""}'
+
+  # anon / service_role キー（JWT）を JwtSecret から作る小さな Lambda
+  KeyGenRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: read-jwt-secret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref JwtSecret
+
+  KeyGenFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 30
+      Role: !GetAtt KeyGenRole.Arn
+      Code:
+        ZipFile: |
+          import base64, hashlib, hmac, json
+          import boto3, cfnresponse
+
+          def b64(b):
+              return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+          def sign(secret, payload):
+              head = b64(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+              body = b64(json.dumps(payload, separators=(",", ":")).encode())
+              sig = hmac.new(secret.encode(), f"{head}.{body}".encode(), hashlib.sha256).digest()
+              return f"{head}.{body}.{b64(sig)}"
+
+          def handler(event, context):
+              try:
+                  if event["RequestType"] == "Delete":
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "dandori-keys")
+                      return
+                  arn = event["ResourceProperties"]["JwtSecretArn"]
+                  raw = boto3.client("secretsmanager").get_secret_value(SecretId=arn)["SecretString"]
+                  secret = json.loads(raw)["jwt_secret"]
+                  iat = 1767225600            # 2026-01-01
+                  exp = iat + 10 * 365 * 86400  # 10年
+                  data = {
+                      "AnonKey": sign(secret, {"role": "anon", "iss": "supabase", "iat": iat, "exp": exp}),
+                      "ServiceRoleKey": sign(secret, {"role": "service_role", "iss": "supabase", "iat": iat, "exp": exp}),
+                  }
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, data, "dandori-keys", noEcho=True)
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "dandori-keys", reason=str(e))
+
+  KeyGen:
+    Type: Custom::JwtKeys
+    Properties:
+      ServiceToken: !GetAtt KeyGenFunction.Arn
+      JwtSecretArn: !Ref JwtSecret
+
+  # ==========================================================================
+  #  データベース（RDS PostgreSQL）
+  # ==========================================================================
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: dandori private subnets
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      EngineVersion: !Ref DbEngineVersion
+      DBInstanceClass: !Ref DbInstanceClass
+      DBName: postgres
+      MasterUsername: postgres
+      ManageMasterUserPassword: true
+      AllocatedStorage: "20"
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: !If [IsMultiAZ, true, false]
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: "19:00-20:00"            # 日本時間 4:00-5:00
+      PreferredMaintenanceWindow: "mon:20:00-mon:21:00" # 日本時間 火曜 5:00-6:00
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: true
+      CopyTagsToSnapshot: true
+
+  # ==========================================================================
+  #  ファイル置き場（画面 / Storage）
+  # ==========================================================================
   SiteBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -52,21 +423,376 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
       OwnershipControls:
-        Rules:
-          - ObjectOwnership: BucketOwnerEnforced
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
       BucketEncryption:
         ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
       VersioningConfiguration:
         Status: Enabled
       LifecycleConfiguration:
         Rules:
           - Id: expire-old-versions
             Status: Enabled
-            NoncurrentVersionExpiration:
-              NoncurrentDays: 30
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
 
+  StorageBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
+
+  # ==========================================================================
+  #  コンテナ（ECR / ECS）
+  # ==========================================================================
+  GatewayRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}/gateway"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      EmptyOnDelete: true
+
+  FunctionsRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}/functions"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      EmptyOnDelete: true
+
+  MigratorRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}/migrator"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      EmptyOnDelete: true
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/dandori/${AWS::StackName}"
+      RetentionInDays: 30
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref "AWS::StackName"
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        - PolicyName: read-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref JwtSecret
+                  - !Ref DbUrls
+                  - !Ref ApiKeys
+                  - !Ref AppSecrets
+                  - !Ref SmtpCredentials
+                  - !Ref SourceDb
+                  - !Ref AuthenticatorPassword
+                  - !Ref AuthAdminPassword
+                  - !Ref StorageAdminPassword
+                  - !GetAtt Database.MasterUserSecret.SecretArn
+
+  ApiTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: storage-bucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !GetAtt StorageBucket.Arn
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:AbortMultipartUpload, s3:ListMultipartUploadParts]
+                Resource: !Sub "${StorageBucket.Arn}/*"
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-api"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "1024"
+      Memory: "2048"
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt ApiTaskRole.Arn
+      ContainerDefinitions:
+        # ---- 入口（/rest/v1 /auth/v1 /storage/v1 /functions/v1 を振り分け）
+        - Name: gateway
+          Image: !Sub "${GatewayRepo.RepositoryUri}:${ImageTag}"
+          Essential: true
+          PortMappings: [{ ContainerPort: 8000, Protocol: tcp }]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: api
+
+        # ---- データ（PostgREST）
+        - Name: rest
+          Image: !Ref PostgrestImage
+          Essential: true
+          Command: [postgrest]
+          Environment:
+            - { Name: PGRST_DB_SCHEMAS, Value: public }
+            - { Name: PGRST_DB_ANON_ROLE, Value: anon }
+            - { Name: PGRST_DB_USE_LEGACY_GUCS, Value: "false" }
+            - { Name: PGRST_SERVER_PORT, Value: "3000" }
+            - { Name: PGRST_DB_POOL, Value: "10" }
+          Secrets:
+            - { Name: PGRST_DB_URI, ValueFrom: !Sub "${DbUrls}:postgrest::" }
+            - { Name: PGRST_JWT_SECRET, ValueFrom: !Sub "${JwtSecret}:jwt_secret::" }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: api
+
+        # ---- ログイン（GoTrue）
+        - Name: auth
+          Image: !Ref GotrueImage
+          Essential: true
+          Environment:
+            - { Name: GOTRUE_API_HOST, Value: 0.0.0.0 }
+            - { Name: GOTRUE_API_PORT, Value: "9999" }
+            - { Name: API_EXTERNAL_URL, Value: !If [HasDomain, !Sub "https://${DomainName}/auth/v1", !Sub "https://${Distribution.DomainName}/auth/v1"] }
+            - { Name: GOTRUE_DB_DRIVER, Value: postgres }
+            - { Name: GOTRUE_SITE_URL, Value: !If [HasDomain, !Sub "https://${DomainName}", !Sub "https://${Distribution.DomainName}"] }
+            - { Name: GOTRUE_URI_ALLOW_LIST, Value: !If [HasDomain, !Sub "https://${DomainName}/**", !Sub "https://${Distribution.DomainName}/**"] }
+            # スタッフのログインは店長が作る（staff-login）。自分で新規登録はさせない
+            - { Name: GOTRUE_DISABLE_SIGNUP, Value: "true" }
+            - { Name: GOTRUE_EXTERNAL_EMAIL_ENABLED, Value: "true" }
+            - { Name: GOTRUE_MAILER_AUTOCONFIRM, Value: "false" }
+            - { Name: GOTRUE_JWT_ADMIN_ROLES, Value: service_role }
+            - { Name: GOTRUE_JWT_AUD, Value: authenticated }
+            - { Name: GOTRUE_JWT_DEFAULT_GROUP_NAME, Value: authenticated }
+            - { Name: GOTRUE_JWT_EXP, Value: "3600" }
+            - { Name: GOTRUE_SMTP_HOST, Value: !Ref SmtpHost }
+            - { Name: GOTRUE_SMTP_PORT, Value: !Ref SmtpPort }
+            - { Name: GOTRUE_SMTP_ADMIN_EMAIL, Value: !Ref SmtpAdminEmail }
+            - { Name: GOTRUE_SMTP_SENDER_NAME, Value: !Ref SmtpSenderName }
+            - { Name: GOTRUE_MAILER_URLPATHS_INVITE, Value: /auth/v1/verify }
+            - { Name: GOTRUE_MAILER_URLPATHS_CONFIRMATION, Value: /auth/v1/verify }
+            - { Name: GOTRUE_MAILER_URLPATHS_RECOVERY, Value: /auth/v1/verify }
+            - { Name: GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE, Value: /auth/v1/verify }
+          Secrets:
+            - { Name: GOTRUE_DB_DATABASE_URL, ValueFrom: !Sub "${DbUrls}:gotrue::" }
+            - { Name: GOTRUE_JWT_SECRET, ValueFrom: !Sub "${JwtSecret}:jwt_secret::" }
+            - { Name: GOTRUE_SMTP_USER, ValueFrom: !Sub "${SmtpCredentials}:username::" }
+            - { Name: GOTRUE_SMTP_PASS, ValueFrom: !Sub "${SmtpCredentials}:password::" }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: api
+
+        # ---- ファイル（Storage → S3）
+        - Name: storage
+          Image: !Ref StorageImage
+          Essential: true
+          Environment:
+            - { Name: STORAGE_BACKEND, Value: s3 }
+            - { Name: STORAGE_S3_BUCKET, Value: !Ref StorageBucket }
+            - { Name: GLOBAL_S3_BUCKET, Value: !Ref StorageBucket }
+            - { Name: STORAGE_S3_REGION, Value: !Ref "AWS::Region" }
+            - { Name: REGION, Value: !Ref "AWS::Region" }
+            - { Name: TENANT_ID, Value: stub }
+            - { Name: FILE_SIZE_LIMIT, Value: "52428800" }
+            - { Name: UPLOAD_FILE_SIZE_LIMIT, Value: "52428800" }
+            - { Name: POSTGREST_URL, Value: "http://127.0.0.1:3000" }
+            - { Name: DB_INSTALL_ROLES, Value: "false" }
+            - { Name: ENABLE_IMAGE_TRANSFORMATION, Value: "false" }
+            - { Name: REQUEST_ALLOW_X_FORWARDED_PATH, Value: "true" }
+            - { Name: STORAGE_PUBLIC_URL, Value: !If [HasDomain, !Sub "https://${DomainName}", !Sub "https://${Distribution.DomainName}"] }
+          Secrets:
+            - { Name: DATABASE_URL, ValueFrom: !Sub "${DbUrls}:storage::" }
+            - { Name: AUTH_JWT_SECRET, ValueFrom: !Sub "${JwtSecret}:jwt_secret::" }
+            - { Name: PGRST_JWT_SECRET, ValueFrom: !Sub "${JwtSecret}:jwt_secret::" }
+            - { Name: ANON_KEY, ValueFrom: !Sub "${ApiKeys}:anon_key::" }
+            - { Name: SERVICE_KEY, ValueFrom: !Sub "${ApiKeys}:service_role_key::" }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: api
+
+        # ---- サーバー処理（3_サーバー の Edge Functions をそのまま）
+        - Name: functions
+          Image: !Sub "${FunctionsRepo.RepositoryUri}:${ImageTag}"
+          Essential: true
+          Environment:
+            # 関数からの DB・ログイン呼び出しは、同じタスクの入口へ
+            - { Name: SUPABASE_URL, Value: "http://127.0.0.1:8000" }
+            # LINE からの呼び出しにはログインの鍵が付かないので、確かめない（署名で守る）
+            - { Name: NO_VERIFY_JWT, Value: line-webhook }
+          Secrets:
+            - { Name: JWT_SECRET, ValueFrom: !Sub "${JwtSecret}:jwt_secret::" }
+            - { Name: SUPABASE_ANON_KEY, ValueFrom: !Sub "${ApiKeys}:anon_key::" }
+            - { Name: SUPABASE_SERVICE_ROLE_KEY, ValueFrom: !Sub "${ApiKeys}:service_role_key::" }
+            - { Name: ANTHROPIC_API_KEY, ValueFrom: !Sub "${AppSecrets}:ANTHROPIC_API_KEY::" }
+            - { Name: GEMINI_API_KEY, ValueFrom: !Sub "${AppSecrets}:GEMINI_API_KEY::" }
+            - { Name: OPENAI_API_KEY, ValueFrom: !Sub "${AppSecrets}:OPENAI_API_KEY::" }
+            - { Name: PIXABAY_API_KEY, ValueFrom: !Sub "${AppSecrets}:PIXABAY_API_KEY::" }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: api
+
+  MigratorTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-migrator"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: migrator
+          Image: !Sub "${MigratorRepo.RepositoryUri}:${ImageTag}"
+          Essential: true
+          Environment:
+            - { Name: PGHOST, Value: !GetAtt Database.Endpoint.Address }
+            - { Name: PGPORT, Value: "5432" }
+            - { Name: PGUSER, Value: postgres }
+            - { Name: PGDATABASE, Value: postgres }
+          Secrets:
+            - { Name: PGPASSWORD, ValueFrom: !Sub "${Database.MasterUserSecret.SecretArn}:password::" }
+            - { Name: AUTHENTICATOR_PASSWORD, ValueFrom: !Sub "${AuthenticatorPassword}:password::" }
+            - { Name: AUTH_ADMIN_PASSWORD, ValueFrom: !Sub "${AuthAdminPassword}:password::" }
+            - { Name: STORAGE_ADMIN_PASSWORD, ValueFrom: !Sub "${StorageAdminPassword}:password::" }
+            - { Name: SOURCE_DB_URL, ValueFrom: !Sub "${SourceDb}:url::" }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: migrator
+
+  # ==========================================================================
+  #  API の入口（社内向け ALB → CloudFront の VPC オリジン）
+  # ==========================================================================
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internal
+      Type: application
+      Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      LoadBalancerAttributes:
+        - { Key: idle_timeout.timeout_seconds, Value: "180" }
+
+  ApiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref Vpc
+      TargetType: ip
+      Protocol: HTTP
+      Port: 8000
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "20" }
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ApiTargetGroup
+
+  ApiService:
+    Type: AWS::ECS::Service
+    DependsOn: AlbListener
+    Properties:
+      Cluster: !Ref Cluster
+      ServiceName: api
+      LaunchType: FARGATE
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref ApiTaskDefinition
+      HealthCheckGracePeriodSeconds: 120
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+          SecurityGroups: [!Ref TaskSecurityGroup]
+      LoadBalancers:
+        - ContainerName: gateway
+          ContainerPort: 8000
+          TargetGroupArn: !Ref ApiTargetGroup
+
+  ApiVpcOrigin:
+    Type: AWS::CloudFront::VpcOrigin
+    DependsOn: GatewayAttachment
+    Properties:
+      VpcOriginEndpointConfig:
+        Name: !Sub "${AWS::StackName}-api"
+        Arn: !Ref Alb
+        HTTPPort: 80
+        HTTPSPort: 443
+        OriginProtocolPolicy: http-only
+
+  # ==========================================================================
+  #  CloudFront（画面も API も、同じアドレスで配る）
+  # ==========================================================================
   OriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -76,34 +802,21 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # Netlify の _headers と同じく「毎回確認」にする（古い画面が残らないように）。
-  # あわせて基本的なセキュリティヘッダーを付ける。
-  ResponseHeadersPolicy:
+  SiteHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
       ResponseHeadersPolicyConfig:
         Name: !Sub "${AWS::StackName}-headers"
         CustomHeadersConfig:
           Items:
-            - Header: Cache-Control
-              Value: "public, max-age=0, must-revalidate"
-              Override: true
-            - Header: X-Robots-Tag
-              Value: "noindex, nofollow"
-              Override: true
+            # Netlify の _headers と同じく「毎回確認」
+            - { Header: Cache-Control, Value: "public, max-age=0, must-revalidate", Override: true }
+            - { Header: X-Robots-Tag, Value: "noindex, nofollow", Override: true }
         SecurityHeadersConfig:
-          StrictTransportSecurity:
-            AccessControlMaxAgeSec: 31536000
-            IncludeSubdomains: false
-            Override: true
-          ContentTypeOptions:
-            Override: true
-          FrameOptions:
-            FrameOption: SAMEORIGIN
-            Override: true
-          ReferrerPolicy:
-            ReferrerPolicy: strict-origin-when-cross-origin
-            Override: true
+          StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: false, Override: true }
+          ContentTypeOptions: { Override: true }
+          FrameOptions: { FrameOption: SAMEORIGIN, Override: true }
+          ReferrerPolicy: { ReferrerPolicy: strict-origin-when-cross-origin, Override: true }
 
   Distribution:
     Type: AWS::CloudFront::Distribution
@@ -123,20 +836,54 @@ Resources:
             MinimumProtocolVersion: TLSv1.2_2021
           - CloudFrontDefaultCertificate: true
         Origins:
-          - Id: s3-site
+          - Id: site
             DomainName: !GetAtt SiteBucket.RegionalDomainName
             OriginAccessControlId: !GetAtt OriginAccessControl.Id
-            S3OriginConfig:
-              OriginAccessIdentity: ""
+            S3OriginConfig: { OriginAccessIdentity: "" }
+          - Id: api
+            DomainName: !GetAtt Alb.DNSName
+            VpcOriginConfig:
+              VpcOriginId: !GetAtt ApiVpcOrigin.Id
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 5
         DefaultCacheBehavior:
-          TargetOriginId: s3-site
+          TargetOriginId: site
           ViewerProtocolPolicy: redirect-to-https
           AllowedMethods: [GET, HEAD]
           CachedMethods: [GET, HEAD]
           Compress: true
-          # Managed-CachingOptimized。デプロイのたびに invalidation するので古い画面は残らない。
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
-          ResponseHeadersPolicyId: !Ref ResponseHeadersPolicy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6          # Managed-CachingOptimized
+          ResponseHeadersPolicyId: !Ref SiteHeadersPolicy
+        CacheBehaviors:
+          - PathPattern: /rest/v1/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad        # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+          - PathPattern: /auth/v1/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - PathPattern: /storage/v1/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - PathPattern: /functions/v1/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
 
   SiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -147,14 +894,69 @@ Resources:
         Statement:
           - Sid: AllowCloudFrontRead
             Effect: Allow
-            Principal:
-              Service: cloudfront.amazonaws.com
+            Principal: { Service: cloudfront.amazonaws.com }
             Action: s3:GetObject
             Resource: !Sub "${SiteBucket.Arn}/*"
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
 
+  # ==========================================================================
+  #  送信箱の定期送信（Supabase 版の pg_cron + pg_net の代わり）
+  # ==========================================================================
+  OutboxConnection:
+    Type: AWS::Events::Connection
+    Properties:
+      AuthorizationType: API_KEY
+      AuthParameters:
+        ApiKeyAuthParameters:
+          ApiKeyName: Authorization
+          ApiKeyValue: !Sub "Bearer ${KeyGen.ServiceRoleKey}"
+
+  OutboxDestination:
+    Type: AWS::Events::ApiDestination
+    Properties:
+      ConnectionArn: !GetAtt OutboxConnection.Arn
+      HttpMethod: POST
+      InvocationEndpoint: !If
+        - HasDomain
+        - !Sub "https://${DomainName}/functions/v1/send-outbox"
+        - !Sub "https://${Distribution.DomainName}/functions/v1/send-outbox"
+      InvocationRateLimitPerSecond: 1
+
+  OutboxInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: events:InvokeApiDestination
+                Resource: !GetAtt OutboxDestination.Arn
+
+  OutboxRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: 送信箱（LINE・メール）を5分ごとに送る
+      ScheduleExpression: rate(5 minutes)
+      State: !Ref OutboxSchedule
+      Targets:
+        - Id: send-outbox
+          Arn: !GetAtt OutboxDestination.Arn
+          RoleArn: !GetAtt OutboxInvokeRole.Arn
+          Input: "{}"
+
+  # ==========================================================================
+  #  GitHub Actions からのデプロイ用（任意）
+  # ==========================================================================
   GitHubOidcProvider:
     Type: AWS::IAM::OIDCProvider
     Condition: MakeOidc
@@ -179,7 +981,7 @@ Resources:
               StringLike:
                 token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
       Policies:
-        - PolicyName: deploy-site
+        - PolicyName: deploy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -195,20 +997,77 @@ Resources:
               - Effect: Allow
                 Action: [cloudformation:DescribeStacks]
                 Resource: !Ref "AWS::StackId"
+              - Effect: Allow
+                Action: [secretsmanager:GetSecretValue]
+                Resource: !Ref ApiKeys
+              - Effect: Allow
+                Action: [ecr:GetAuthorizationToken]
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource:
+                  - !GetAtt GatewayRepo.Arn
+                  - !GetAtt FunctionsRepo.Arn
+                  - !GetAtt MigratorRepo.Arn
+              - Effect: Allow
+                Action: [ecs:UpdateService, ecs:DescribeServices]
+                Resource: !Ref ApiService
 
+# ----------------------------------------------------------------------------
 Outputs:
-  BucketName:
-    Value: !Ref SiteBucket
-  DistributionId:
-    Value: !Ref Distribution
-  CloudFrontDomain:
-    Description: 独自ドメインの CNAME 先にもこれを使う
-    Value: !GetAtt Distribution.DomainName
   SiteUrl:
+    Description: 画面と API の入口（config.js の supabaseUrl もこれ）
     Value: !If
       - HasDomain
-      - !Sub "https://${DomainName}/"
-      - !Sub "https://${Distribution.DomainName}/"
+      - !Sub "https://${DomainName}"
+      - !Sub "https://${Distribution.DomainName}"
+  CloudFrontDomain:
+    Description: 独自ドメインの CNAME 先
+    Value: !GetAtt Distribution.DomainName
+  BucketName:
+    Value: !Ref SiteBucket
+  StorageBucketName:
+    Value: !Ref StorageBucket
+  DistributionId:
+    Value: !Ref Distribution
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !GetAtt ApiService.Name
+  MigratorTaskDefinition:
+    Value: !Ref MigratorTaskDefinition
+  TaskSubnets:
+    Value: !Sub "${PublicSubnetA},${PublicSubnetB}"
+  TaskSecurityGroup:
+    Value: !Ref TaskSecurityGroup
+  LogGroupName:
+    Value: !Ref LogGroup
+  GatewayRepoUri:
+    Value: !GetAtt GatewayRepo.RepositoryUri
+  FunctionsRepoUri:
+    Value: !GetAtt FunctionsRepo.RepositoryUri
+  MigratorRepoUri:
+    Value: !GetAtt MigratorRepo.RepositoryUri
+  ApiKeysSecretArn:
+    Value: !Ref ApiKeys
+  AppSecretsArn:
+    Description: AI・写真検索の鍵を入れる場所
+    Value: !Ref AppSecrets
+  SmtpSecretArn:
+    Description: SES の SMTP 認証情報を入れる場所
+    Value: !Ref SmtpCredentials
+  SourceDbSecretArn:
+    Description: 移行元 Supabase の接続文字列を入れる場所
+    Value: !Ref SourceDb
+  DbEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
   DeployRoleArn:
     Condition: HasGitHub
     Value: !GetAtt GitHubDeployRole.Arn

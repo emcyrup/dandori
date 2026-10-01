@@ -139,18 +139,25 @@ create or replace function app.shift_slot_seed_core(p_store uuid)
 returns integer
 language plpgsql security definer set search_path = public, app
 as $$
-declare st public.store; n integer;
+declare st public.store; n integer; v_food boolean := false;
 begin
   select * into st from public.store where id = p_store;
 
-  if to_regclass('public.food_shift_pattern') is not null
-     and exists (select 1 from public.food_shift_pattern p where p.store_id = p_store) then
-    insert into public.shift_slot(tenant_id, store_id, name, start_time, end_time, color, sort_no)
-    select st.tenant_id, p_store, p.name, p.start_time, p.end_time, p.color, p.sort_no
-      from public.food_shift_pattern p
-     where p.store_id = p_store and p.is_active
-       and not exists (select 1 from public.shift_slot x
-                        where x.store_id = p_store and x.name = p.name);
+  -- food_shift_pattern はフードにしか無いので、ほかの業種で止まらないよう文字列で実行します
+  if to_regclass('public.food_shift_pattern') is not null then
+    execute 'select exists (select 1 from public.food_shift_pattern p where p.store_id = $1)'
+      into v_food using p_store;
+  end if;
+
+  if v_food then
+    execute $q$
+      insert into public.shift_slot(tenant_id, store_id, name, start_time, end_time, color, sort_no)
+      select $1, $2, p.name, p.start_time, p.end_time, p.color, p.sort_no
+        from public.food_shift_pattern p
+       where p.store_id = $2 and p.is_active
+         and not exists (select 1 from public.shift_slot x
+                          where x.store_id = $2 and x.name = p.name)
+    $q$ using st.tenant_id, p_store;
   else
     insert into public.shift_slot(tenant_id, store_id, name, start_time, end_time, sort_no)
     select st.tenant_id, p_store, v.name, v.s::time, v.e::time, v.sort
@@ -6416,6 +6423,12 @@ grant execute on function public.food_table_board(uuid, date) to authenticated;
 --  卓をタップしたら、その場でお通しできるようにします。
 --   ・ご予約を渡せば、その卓にひもづけて「ご来店」にします
 --   ・渡さなければ、飛び込みのお客様として開けます
+--  ※ public.food_session が無い業種（ナイトなど）では作りません（型が無いとエラーで止まるため）
+do $guard$
+begin
+  if to_regclass('public.food_session') is null then return; end if;
+
+  execute $fn$
 create or replace function public.food_seat_take(
   p_store uuid, p_table uuid, p_guests integer default 2,
   p_reservation uuid default null)
@@ -6439,10 +6452,12 @@ begin
                                 p_reservation);
   return s;
 end;
-$$;
-
-revoke all on function public.food_seat_take(uuid, uuid, integer, uuid) from public;
-grant execute on function public.food_seat_take(uuid, uuid, integer, uuid) to authenticated;
+$$
+  $fn$;
+  execute $fn$revoke all on function public.food_seat_take(uuid, uuid, integer, uuid) from public$fn$;
+  execute $fn$grant execute on function public.food_seat_take(uuid, uuid, integer, uuid) to authenticated$fn$;
+end
+$guard$;
 
 
 -- ============================================================================
@@ -6451,6 +6466,12 @@ grant execute on function public.food_seat_take(uuid, uuid, integer, uuid) to au
 --   これまでは、いちど決めたお部屋を外せませんでした。
 -- ============================================================================
 
+--  ※ public.pet_stay が無い業種（ナイトなど）では作りません（型が無いとエラーで止まるため）
+do $guard$
+begin
+  if to_regclass('public.pet_stay') is null then return; end if;
+
+  execute $fn$
 create or replace function public.pet_stay_set(
   p_stay uuid, p_from date default null, p_to date default null,
   p_room uuid default null, p_menu uuid default null, p_meal text default null,
@@ -6490,11 +6511,13 @@ begin
    where id = p_stay returning * into s;
   return s;
 end;
-$$;
-
-grant execute on function public.pet_stay_set(
+$$
+  $fn$;
+  execute $fn$grant execute on function public.pet_stay_set(
   uuid, date, date, uuid, uuid, text, text, text, timestamptz, text, boolean)
-  to authenticated;
+  to authenticated$fn$;
+end
+$guard$;
 
 
 -- ============================================================================
