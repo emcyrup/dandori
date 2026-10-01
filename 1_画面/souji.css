@@ -1,0 +1,50 @@
+
+/* ============================================================================
+   清掃チェック表の、紙に出すところ（souji.js とセット）
+   画面では見えません。印刷のときだけ出ます。
+   ============================================================================ */
+
+#printArea{display:none}
+
+.psheet{color:#000; background:#fff; font-size:11pt; line-height:1.55}
+.psheet .phead{display:flex; align-items:flex-end; justify-content:space-between;
+  border-bottom:2px solid #000; padding-bottom:6px; margin-bottom:10px}
+.psheet .ptitle{font-size:18pt; font-weight:700; letter-spacing:.06em}
+.psheet .pmeta{text-align:right; font-size:11pt}
+.psheet .pmeta span{display:block}
+
+table.ptable{width:100%; border-collapse:collapse; margin-top:4px}
+table.ptable th, table.ptable td{border:1px solid #000; padding:5px 7px;
+  vertical-align:middle; font-size:10.5pt}
+table.ptable th{background:#eee; font-weight:700; text-align:left; font-size:10pt}
+table.ptable td.c{text-align:center}
+table.ptable td b{font-weight:700}
+.psheet .phow{display:block; font-size:8.5pt; color:#444; margin-top:1px}
+.psheet .pline{border-bottom:1px dotted #666; min-width:180px}
+
+.psheet .pbox{display:inline-block; width:15px; height:15px;
+  border:1.4px solid #000; border-radius:2px}
+.psheet .phanko{display:inline-block; width:34px; height:34px;
+  border:1px solid #888; border-radius:50%}
+.psheet .phanko.big{width:44px; height:44px}
+
+.psheet .pnote{margin-top:10px; border:1px solid #000; padding:7px 10px; font-size:10pt}
+.psheet .pnote b{display:block; margin-bottom:3px}
+.psheet .pnote ul{margin:0; padding-left:1.1em}
+.psheet .pnote li{margin:1px 0}
+
+.psheet .pfoot{display:flex; align-items:center; gap:12px; margin-top:14px;
+  justify-content:flex-end; font-size:11pt}
+.psheet .pfline{display:inline-block; width:200px; border-bottom:1px solid #000;
+  height:26px}
+.psheet .pby{margin-top:10px; text-align:right; font-size:8.5pt; color:#555}
+
+@media print{
+  body.printing > *{display:none !important}
+  body.printing > #printArea{display:block !important}
+  body.printing{background:#fff !important}
+  #printArea{display:block}
+  .psheet{page-break-inside:auto}
+  table.ptable tr{page-break-inside:avoid}
+  @page{size:A4 portrait; margin:12mm 11mm}
+}

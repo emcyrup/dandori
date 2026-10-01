@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ナイトだんどり｜こんなこともできます</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+
+<style>
+.tn-lead{color:var(--muted); font-size:13.5px; line-height:1.9; max-width:52em}
+.tn-lead b{color:var(--ink)}
+.tn-pack{border:1px solid var(--line); border-radius:13px; overflow:hidden;
+  margin-top:16px; background:var(--panel)}
+.tn-hd{background:var(--panel2); border-bottom:1px solid var(--line); padding:13px 18px}
+.tn-hd b{font-size:16.5px; color:var(--gold)}
+.tn-hd span{display:block; color:var(--muted); font-size:12.5px; margin-top:2px}
+.tn-bd{padding:2px 18px 14px}
+.tn-o{border-bottom:1px dashed var(--line); padding:14px 0}
+.tn-o:last-child{border-bottom:0}
+.tn-nm{font-size:15.5px; font-weight:700}
+.tn-why{color:var(--gold); font-size:12.5px; margin-top:3px}
+.tn-what{color:var(--muted); font-size:13.5px; margin-top:4px; line-height:1.8}
+.tn-grow{margin-top:9px; border-left:3px solid var(--gold-dim);
+  background:var(--panel2); border-radius:0 9px 9px 0; padding:9px 13px;
+  font-size:13px; line-height:1.78; color:var(--muted)}
+.tn-tie{display:block; color:var(--gold); font-weight:700; font-size:12px;
+  margin-bottom:1px}
+.tn-tie:before{content:"＋ "}
+.tn-ask{border:1px solid var(--line); border-left:5px solid var(--gold);
+  border-radius:11px; padding:16px 20px; margin-top:24px; background:var(--panel)}
+.tn-ask b{display:block; font-size:15.5px; margin-bottom:5px}
+.tn-ask p{margin:4px 0; color:var(--muted); font-size:13.5px; line-height:1.85}
+</style>
+
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>ナイトだんどり</h1>
+    <p>こんなこともできます</p>
+    <div class="field">
+      <label for="email">メールアドレス</label>
+      <input id="email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn primary" style="width:100%" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">DANDORI</span>
+    <select id="storeSel" aria-label="店舗"></select>
+    <span class="who">
+<a class="btn ghost" href="guide.html" target="_blank" rel="noopener"
+         style="padding:6px 12px;text-decoration:none">使い方</a>
+      <span id="meName" style="display:none"></span>
+      <button class="btn ghost" id="logoutBtn" style="padding:6px 12px">ログアウト</button>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <h2>こんなこともできます</h2>
+      <p class="tn-lead">
+        いまお使いの画面に、あとから足せるものをまとめています。<br>
+        どれも<b>別のソフトではありません</b>。いまの画面にくっついて、そこから伸びます。
+        二重に入力していただくところは、どれにもありません。<br>
+        気になるものがあれば、<b>担当までひとことお知らせください</b>。
+        お店のやり方をうかがったうえで、できること・かかる期間をお返しします。
+      </p>
+      <p class="tn-lead" style="margin-top:10px">
+        <b>日報のAI下書きは、いまお使いのぶんにもう入っています</b>（追加料金はありません）。
+        ここにならんでいるのは、そのうえに足せるものです。
+      </p>
+    </div>
+
+    <div class="tn-pack"><div class="tn-hd"><b>集客パック</b><span>来ていただく回数を増やし、はじめてのお客様に届きやすくします。</span></div><div class="tn-bd">
+<div class="tn-o"><div class="tn-nm">予約の前日リマインド</div><div class="tn-why">「うっかり忘れ」の無断キャンセルを減らします。</div><div class="tn-what">前日の決めた時刻に、LINEで自動でお知らせします。変更・キャンセルもその場でできます。</div><div class="tn-grow"><span class="tn-tie">いまの予約板 とつながります</span>予約板に入っているご予約が、そのまま前日のお知らせになります。二重に入力するところはありません。「変更したい」と返ってきたら、その場で予約板を直せます。</div></div>
+<div class="tn-o"><div class="tn-nm">クチコミのお願い</div><div class="tn-why">クチコミは、お店を知っていただく入口になります。</div><div class="tn-what">ご来店の翌日に、Googleクチコミのリンクをお送りします。送る・送らないは、お客様ごとに決められます。</div><div class="tn-grow"><span class="tn-tie">いまのお会計・カルテ とつながります</span>お会計がすんだ方にだけ、翌日おくります。常連さまには何度も送らない、はじめての方だけ送る、といった出し分けもできます。</div></div>
+<div class="tn-o"><div class="tn-nm">ごぶさた・お誕生日のお知らせ</div><div class="tn-why">前回から間があいた方に、こちらから思い出していただきます。</div><div class="tn-what">「最後のご来店から◯日」で自動で一覧に出て、そのままLINEでお声がけできます。</div><div class="tn-grow"><span class="tn-tie">いまの「そろそろ」の一覧 とつながります</span>一覧は、もう画面に出ています。オプションを足すと、その一覧からそのままLINEを送れるようになり、送った・送っていないが残ります。</div></div>
+<div class="tn-o"><div class="tn-nm">ご紹介カード</div><div class="tn-why">いちばん強い集客は、お客様からのご紹介です。</div><div class="tn-what">紹介した方・された方の両方に特典。だれの紹介かを、台帳で追えるようにします。</div><div class="tn-grow"><span class="tn-tie">いまのお客様台帳 とつながります</span>「どなたのご紹介か」が台帳につながります。ご紹介くださった方の一覧と、そこから生まれた売上が出せるようになります。</div></div>
+</div></div>
+    <div class="tn-pack"><div class="tn-hd"><b>売上をふやすパック</b><span>一度のご来店の単価と、次のご予約につなげます。</span></div><div class="tn-bd">
+<div class="tn-o"><div class="tn-nm">回数券・前売りチケット</div><div class="tn-why">先にお支払いいただくので、次のご来店が決まります。</div><div class="tn-what">残り回数を管理し、お会計で自動で1回ぶん引きます。有効期限のお知らせも出します。</div><div class="tn-grow"><span class="tn-tie">いまのお会計 とつながります</span>お会計の画面に「回数券をつかう」が出ます。押すだけで1回ぶん引かれ、残り回数はカルテでも、お客様のLINEでも見られます。</div></div>
+<div class="tn-o"><div class="tn-nm">ポイント</div><div class="tn-why">「あと少しで貯まる」が、次のご予約の理由になります。</div><div class="tn-what">金額・回数のどちらでも貯められます。LINEで残ポイントをお知らせできます。</div><div class="tn-grow"><span class="tn-tie">いまのお会計・お客様台帳 とつながります</span>お会計を確定した時点で、自動でたまります。台帳にポイントの残りがならび、月べつの売上といっしょに「使われたポイント」も見えるようになります。</div></div>
+<div class="tn-o"><div class="tn-nm">写真のカルテ（施術前・施術後）</div><div class="tn-why">言葉より写真のほうが、伝わります。</div><div class="tn-what">カルテに写真を並べ、お客様のLINEへもお送りできます。お店のSNSに使う許可も、その場でいただけます。</div><div class="tn-grow"><span class="tn-tie">いまのカルテ とつながります</span>カルテに、そのまま写真がならびます。次のご来店のときに前回の仕上がりを見ながらご相談でき、ご本人のLINEにもお送りできます。</div></div>
+<div class="tn-o"><div class="tn-nm">自社のご予約ページ</div><div class="tn-why">予約サイトの手数料をかけずに、24時間受け付けます。</div><div class="tn-what">空いている枠をそのまま公開します。ご予約が入ると、その場で予約板に載ります。</div><div class="tn-grow"><span class="tn-tie">いまの予約板・スタッフ名簿 とつながります</span>スタッフさんの出勤と、すでに入っているご予約から、空いている枠が自動でできます。手であけ枠を作る必要がありません。ご予約が入ると、その場で予約板に載ります。</div></div>
+</div></div>
+    <div class="tn-pack"><div class="tn-hd"><b>手間をへらすパック</b><span>毎日くりかえしている作業を、こちらで巻き取ります。</span></div><div class="tn-bd">
+<div class="tn-o"><div class="tn-nm">朝のひとこと</div><div class="tn-why">数字を見に行かなくても、数字のほうから来ます。</div><div class="tn-what">毎朝きまった時刻に、前日の売上・きょうのご予約・足りない在庫を、店長さまのLINEへお送りします。</div><div class="tn-grow"><span class="tn-tie">いまの日締め・予約板・在庫 とつながります</span>前日の売上（締めた数字）、きょうのご予約、発注点を切った在庫——すでに画面にあるものを、まとめて1通にしてお送りするだけです。新しく入力していただくものはありません。</div></div>
+<div class="tn-o"><div class="tn-nm">打刻</div><div class="tn-why">紙のタイムカードの転記が、なくなります。</div><div class="tn-what">お店のタブレットのQR、またはご自分のスマホから打刻。そのまま出勤簿と給与計算につながります。</div><div class="tn-grow"><span class="tn-tie">いまの出勤簿・給与の計算 とつながります</span>打刻が、そのまま出勤簿になり、そのまま給与の計算に入ります。「タイムカードを見ながら打ち直す」が、まるごとなくなります。</div></div>
+<div class="tn-o"><div class="tn-nm">発注の目安をAIが出す</div><div class="tn-why">「あと何日でなくなるか」を、いちいち考えなくて済みます。</div><div class="tn-what">これまでの使いかたから「この3日で切れます」と出します。決めるのは人です。AIは下書きまでです。</div><div class="tn-grow"><span class="tn-tie">いまの在庫・発注 とつながります</span>在庫の出し入れが2〜3か月たまると、「この3日で切れます」と出るようになります。発注の下書きの数量も、そこから入ります。</div></div>
+<div class="tn-o"><div class="tn-nm">会計ソフトへの書き出し</div><div class="tn-why">月末の転記が、ボタン1つになります。</div><div class="tn-what">freee・マネーフォワードなどに取りこめる形で書き出します。税理士さまへお渡しする形にも合わせられます。</div><div class="tn-grow"><span class="tn-tie">いまの日締め・仕入・給与 とつながります</span>締めた売上・仕入・人件費を、そのまま書き出します。月末に数字を拾い直す作業が、なくなります。</div></div>
+</div></div>
+    <div class="tn-pack"><div class="tn-hd"><b>守りのパック</b><span>「言った・言わない」と、更新忘れをなくします。</span></div><div class="tn-bd">
+<div class="tn-o"><div class="tn-nm">電子の同意書・カウンセリングシート</div><div class="tn-why">紙の保管と、書いていただく時間がなくなります。</div><div class="tn-what">ご来店の前にLINEでご記入いただけます。署名つきで残り、カルテからいつでも見られます。</div><div class="tn-grow"><span class="tn-tie">いまのカルテ・LINE とつながります</span>ご予約が入ると、そのお客様にご記入のお願いが飛びます。書いていただいた内容は、ご来店の前にカルテに入っています。</div></div>
+<div class="tn-o"><div class="tn-nm">資格・講習の期限管理</div><div class="tn-why">更新忘れは、営業そのものが止まります。</div><div class="tn-what">調理師・防火管理者・動物取扱責任者・各種講習の期限を持ち、60日前・30日前・当日にお知らせします。</div><div class="tn-grow"><span class="tn-tie">いまの届出・許可証 とつながります</span>許可証と同じ画面に、人の資格もならびます。お店の期限と、人の期限を、1か所で見られるようになります。</div></div>
+<div class="tn-o"><div class="tn-nm">請求・売掛</div><div class="tn-why">法人のお客様や、つけ払いをまとめます。</div><div class="tn-what">月末で締めて請求書を出し、入金の消し込みまで。残っているぶんが一覧で見えます。</div><div class="tn-grow"><span class="tn-tie">いまのお会計・お客様台帳 とつながります</span>「つけ」で処理したお会計が、そのまま売掛に積み上がります。月末に締めるだけで請求書になり、入金の消しこみまでつながります。</div></div>
+<div class="tn-o"><div class="tn-nm">本部の画面（多店舗）</div><div class="tn-why">店舗が増えても、見る場所は1つのままです。</div><div class="tn-what">全店の今日・今月をならべ、気になる店だけ中に入ります。店長さまには、ご自分の店だけをお見せします。</div><div class="tn-grow"><span class="tn-tie">いまの日締め・権限 とつながります</span>各店が締めた数字が、そのまま本部の画面にならびます。店長さまにはご自分の店だけ、オーナーさまには全店——と、いまの権限のまま出し分けます。</div></div>
+</div></div>
+
+    <div class="tn-ask">
+      <b>気になるものがありましたら</b>
+      <p>株式会社スリーピース ／ AI伴走LABO　担当：鈴木</p>
+      <p>フリーダイヤル 0120-935-593（9:00〜21:00 年中無休）</p>
+      <p>ai-info@3-piece.co.jp</p>
+      <p style="margin-top:10px">
+        期間と費用は、店舗数・いまお使いの道具・つなぐ先によって変わります。
+        お困りごとをうかがったうえで、お見積りをお出しします。</p>
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="art.js"></script>
+<script src="photo.js"></script>
+<script src="ui.js"></script>
+<script src="pw.js"></script>
+<script src="perm.js"></script>
+<script src="kyotsu.js"></script>
+<script>
+/*  この画面は、読むだけの画面です。ログインと店舗えらびだけ動かします。 */
+K.wireLogin();
+K.boot(function () {});
+</script>
+<script src="menu.js"></script>
+</body>
+</html>

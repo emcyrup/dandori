@@ -1,0 +1,654 @@
+/* ============================================================================
+   だんどりシリーズ / ナイトだんどり 伝票・会計
+   style.css
+   置き場所： サイトのルート（index.html と同じ階層）
+   ============================================================================ */
+
+:root{
+  --bg:#0E1319; --panel:#161D26; --panel2:#1D2732; --line:#2A3746;
+  --ink:#E8EEF4; --muted:#8FA1B3; --dim:#5E6E7E;
+  --gold:#C9A65A; --gold-dim:#8A7136;
+  --ok:#3FA97A; --warn:#D79A3C; --bad:#D96A6A;
+  --radius:10px;
+}
+/* 着せ替え：明るい画面 */
+body.theme-standard{
+  --bg:#F2F4F7; --panel:#FFFFFF; --panel2:#F7F9FB; --line:#DDE3EA;
+  --ink:#16202A; --muted:#5C6B7A; --dim:#8494A3;
+  --gold:#9A7B2E; --gold-dim:#C6B285;
+}
+/* 着せ替え：大きな文字 */
+body.theme-large{
+  --bg:#F2F4F7; --panel:#FFFFFF; --panel2:#F7F9FB; --line:#C9D2DB;
+  --ink:#0C1620; --muted:#42525F; --dim:#6B7B89;
+  --gold:#8A6C22; --gold-dim:#B9A46F;
+  font-size:19px;
+}
+body.theme-large .menu-btn b{font-size:1.15em}
+body.theme-large .btn{padding:16px 22px}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;
+  font-size:15px; line-height:1.6; -webkit-text-size-adjust:100%;
+}
+button,input,select{font:inherit; color:inherit}
+.hidden{display:none !important}
+.mono{font-variant-numeric:tabular-nums}
+
+/* ---- ログイン ---- */
+#login{min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px}
+.login-box{width:100%; max-width:380px; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); padding:30px 26px}
+.login-box h1{font-size:21px; margin:0 0 4px; letter-spacing:.04em}
+.login-box p{margin:0 0 22px; color:var(--muted); font-size:13px}
+.field{display:flex; flex-direction:column; gap:6px; margin-bottom:14px}
+.field label{font-size:12px; color:var(--muted); letter-spacing:.06em}
+.field input,.field select{background:var(--panel2); border:1px solid var(--line);
+  border-radius:8px; padding:11px 13px; width:100%}
+.field input:focus,.field select:focus{outline:2px solid var(--gold); outline-offset:1px}
+
+/* ---- ヘッダー ---- */
+header{position:sticky; top:0; z-index:20; background:var(--panel);
+  border-bottom:1px solid var(--line); padding:10px 14px;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+header .brand{font-size:13px; letter-spacing:.14em; color:var(--gold); font-weight:700}
+header select{background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:7px 10px}
+header .who{margin-left:auto; color:var(--muted); font-size:12.5px; display:flex; align-items:center; gap:10px}
+
+/* ---- タブ ---- */
+nav.tabs{display:flex; gap:6px; padding:10px 14px 0; flex-wrap:wrap}
+nav.tabs button{background:transparent; border:1px solid var(--line); color:var(--muted);
+  border-radius:999px; padding:7px 16px; cursor:pointer}
+nav.tabs button[aria-selected="true"]{background:var(--gold); border-color:var(--gold); color:var(--on-gold,#14191F); font-weight:700}
+
+main{padding:14px; max-width:1080px; margin:0 auto}
+
+/* ---- ボタン ---- */
+.btn{background:var(--panel2); border:1px solid var(--line); color:var(--ink);
+  border-radius:9px; padding:11px 18px; cursor:pointer}
+.btn:hover{border-color:var(--gold-dim)}
+.btn.primary{background:var(--gold); border-color:var(--gold); color:var(--on-gold,#14191F); font-weight:700}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--bad); border-color:#4A2A2A}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+
+/* ---- 卓カード ---- */
+.cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; margin-top:12px}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:15px 16px; cursor:pointer; text-align:left; display:flex; flex-direction:column; gap:8px}
+.card:hover{border-color:var(--gold-dim)}
+.card .tno{font-size:22px; font-weight:700; letter-spacing:.04em}
+.card .gname{color:var(--ink); font-size:15px}
+.card .meta{color:var(--muted); font-size:12.5px; display:flex; gap:10px; flex-wrap:wrap}
+.card .amt{margin-top:2px; font-size:20px; font-weight:700; color:var(--gold)}
+.card.long{border-color:var(--warn)}
+.card.long .meta .min{color:var(--warn); font-weight:700}
+.empty{color:var(--muted); padding:34px 0; text-align:center}
+
+/* ---- 伝票 ---- */
+.ticket{display:grid; grid-template-columns:1fr 340px; gap:14px; align-items:start}
+@media (max-width:840px){ .ticket{grid-template-columns:1fr} }
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:15px 16px}
+.panel h2{font-size:14px; letter-spacing:.1em; color:var(--muted); margin:0 0 12px; font-weight:700}
+.cat{margin-bottom:14px}
+.cat > h3{font-size:12px; letter-spacing:.1em; color:var(--gold); margin:0 0 7px; font-weight:700}
+.menu-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px}
+.menu-btn{background:var(--panel2); border:1px solid var(--line); border-radius:9px;
+  padding:12px 10px; cursor:pointer; text-align:left; display:flex; flex-direction:column; gap:3px}
+.menu-btn:hover{border-color:var(--gold)}
+.menu-btn b{font-size:14px; font-weight:600}
+.menu-btn span{font-size:12.5px; color:var(--muted)}
+.items{display:flex; flex-direction:column}
+.item{display:grid; grid-template-columns:1fr auto auto; gap:8px; align-items:center;
+  padding:9px 0; border-bottom:1px solid var(--line)}
+.item .nm{font-size:14px}
+.item .sub{display:block; color:var(--muted); font-size:12px}
+.item .am{font-weight:600}
+.item button{background:none; border:none; color:var(--dim); cursor:pointer; padding:4px 6px; font-size:16px}
+.item button:hover{color:var(--bad)}
+.totals{margin-top:12px; display:flex; flex-direction:column; gap:5px}
+.totals div{display:flex; justify-content:space-between; color:var(--muted); font-size:13.5px}
+.totals div.grand{color:var(--ink); font-size:24px; font-weight:700; border-top:1px solid var(--line);
+  margin-top:7px; padding-top:9px}
+.totals div.grand span:last-child{color:var(--gold)}
+
+/* ---- モーダル ---- */
+.modal{position:fixed; inset:0; z-index:40; background:rgba(4,8,12,.72);
+  display:flex; align-items:center; justify-content:center; padding:18px}
+.modal .box:has(#d_table), .modal .box:has(.ps-detail){max-width:1020px}
+.modal .box{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:22px; width:100%; max-width:420px; max-height:90vh; overflow:auto}
+.modal h2{font-size:17px; margin:0 0 16px}
+.pay-check{margin:10px 0 4px; padding:10px 12px; border-radius:8px; font-size:13.5px}
+.pay-check.ok{background:rgba(63,169,122,.13); color:var(--ok)}
+.pay-check.ng{background:rgba(217,106,106,.13); color:var(--bad)}
+
+/* ---- 一覧（売掛・日締め） ---- */
+table.list{width:100%; border-collapse:collapse; font-size:13.5px}
+table.list th{text-align:left; color:var(--muted); font-size:11.5px; letter-spacing:.06em;
+  padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap}
+table.list td{padding:10px; border-bottom:1px solid var(--line); vertical-align:middle}
+table.list td.num{text-align:right; font-variant-numeric:tabular-nums}
+.tag{font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px}
+.tag.open{background:rgba(217,154,60,.15); color:var(--warn)}
+.tag.partial{background:rgba(201,166,90,.15); color:var(--gold)}
+.tag.settled{background:rgba(63,169,122,.15); color:var(--ok)}
+.scroll{overflow-x:auto}
+
+/* ---- お知らせの箱・小さな印 ---- */
+.box{border:1px solid var(--line); background:var(--panel2); border-left:3px solid var(--gold-dim);
+  border-radius:8px; padding:10px 14px; font-size:13.5px; margin-bottom:8px}
+.box.warn{border-left-color:var(--warn)}
+.box.bad{border-left-color:var(--bad)}
+.box b{display:block; margin-bottom:3px}
+.pill{display:inline-block; padding:1px 8px; border-radius:999px; font-size:11.5px;
+  border:1px solid var(--line); color:var(--muted)}
+.pill.warn{border-color:var(--warn); color:var(--warn)}
+.pill.ok{border-color:var(--ok); color:var(--ok)}
+.pill.bad{border-color:var(--bad); color:var(--bad)}
+
+/* ---- 給与明細の書式 ----
+   実際にお使いの用紙に合わせて、ここを書き換えます。
+   （お店の様式をいただければ、この部分を合わせてお作りします） */
+.payslip{color:var(--ink); font-size:14px}
+.payslip .ps-head{display:flex; justify-content:space-between; align-items:flex-end;
+  border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:16px}
+.payslip .ps-t{font-size:21px; font-weight:800; letter-spacing:.08em}
+.payslip .ps-no{font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums}
+.payslip .ps-to{display:flex; justify-content:space-between; align-items:baseline;
+  flex-wrap:wrap; gap:8px; margin-bottom:14px}
+.payslip .ps-name{font-size:19px; font-weight:700}
+.payslip .ps-period{font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums}
+.payslip .ps-net{display:flex; justify-content:space-between; align-items:center;
+  border:1px solid var(--gold-dim); border-radius:8px; padding:12px 16px; margin-bottom:16px}
+.payslip .ps-net span{font-size:13px; color:var(--muted)}
+.payslip .ps-net b{font-size:26px; font-variant-numeric:tabular-nums; color:var(--gold)}
+.payslip .ps-cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px}
+.payslip .ps-col h4{margin:0 0 6px; font-size:12.5px; color:var(--muted); font-weight:700;
+  letter-spacing:.06em; border-bottom:1px solid var(--line); padding-bottom:4px}
+.payslip .ps-col table{width:100%; border-collapse:collapse}
+.payslip .ps-col th{text-align:left; font-weight:400; padding:5px 0; font-size:13.5px}
+.payslip .ps-col td{text-align:right; padding:5px 0; font-variant-numeric:tabular-nums}
+.payslip .ps-col td .q{color:var(--muted); font-size:12px; margin-right:8px}
+.payslip .ps-note{margin-top:16px; padding-top:10px; border-top:1px solid var(--line);
+  font-size:12.5px; color:var(--muted); white-space:pre-wrap}
+.payslip .ps-issuer{margin-top:14px; font-size:12.5px; color:var(--muted); text-align:right}
+
+/* ---- 明細の内訳（2枚目） ---- */
+.payslip .ps-sub{margin:20px 0 6px; font-size:13px; font-weight:700; color:var(--muted);
+  letter-spacing:.06em}
+.payslip .ps-break{height:0}
+table.ps-detail{width:100%; border-collapse:collapse; font-size:12.5px}
+table.ps-detail th{text-align:left; font-weight:700; color:var(--muted);
+  border-bottom:1px solid var(--line); padding:5px 6px; white-space:nowrap}
+table.ps-detail td{padding:5px 6px; border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums}
+table.ps-detail th.num, table.ps-detail td.num{text-align:right}
+table.ps-detail tr.ps-total td{border-top:1.5px solid var(--gold-dim); border-bottom:none;
+  font-weight:700}
+
+@media print{
+  .payslip{color:#000 !important; font-size:13px}
+  .payslip .ps-head{border-color:#000}
+  .payslip .ps-net{border-color:#000}
+  .payslip .ps-net b{color:#000 !important}
+  .payslip .ps-col h4, .payslip .ps-col td .q,
+  .payslip .ps-note, .payslip .ps-issuer, .payslip .ps-no, .payslip .ps-period,
+  .payslip .ps-net span{color:#333 !important}
+  .payslip .ps-col h4, .payslip .ps-note{border-color:#999}
+  .payslip .ps-cols{grid-template-columns:1fr 1fr}
+  .payslip .ps-break{break-before:page; page-break-before:always; height:0}
+  .payslip .ps-sub{color:#333 !important}
+  table.ps-detail{font-size:10.5px}
+  table.ps-detail th{color:#333 !important; border-color:#999}
+  table.ps-detail td{color:#000 !important; border-color:#ccc}
+  table.ps-detail tr.ps-total td{border-top-color:#000}
+  table.ps-detail tr{break-inside:avoid; page-break-inside:avoid}
+  @page{size:A4 portrait; margin:16mm}
+}
+
+/* ---- 印刷（給与明細・名簿を白紙に出す） ---- */
+@media print{
+  body{background:#fff !important; color:#000 !important}
+  header, nav.tabs, #toast, .no-print, .btn{display:none !important}
+  main{padding:0; max-width:none}
+  .panel{border:none; background:#fff; color:#000; padding:0}
+  .panel h2{color:#000; font-size:16px; letter-spacing:0}
+  table.list th, table.list td{color:#000; border-color:#999}
+  .scroll{overflow:visible}
+  .pay-check{background:none !important; color:#000 !important; border-left:3px solid #999; padding-left:10px}
+  .tag{border:1px solid #999; background:none !important; color:#000 !important}
+  /* モーダル（給与明細）が開いているときは、そちらだけを出す */
+  body:has(.modal) main{display:none !important}
+  .modal{position:static; background:none; padding:0; display:block}
+  .modal .box{border:none; background:#fff; color:#000; max-width:none; max-height:none;
+    padding:0; box-shadow:none}
+  .modal .box .row{display:none !important}
+  .modal .totals div{color:#000}
+  .modal .totals div.grand{border-top:1px solid #000}
+}
+
+/* ---- トースト ---- */
+#toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:60;
+  display:flex; flex-direction:column; gap:8px; align-items:center; pointer-events:none}
+.toast{background:var(--panel2); border:1px solid var(--line); border-left:4px solid var(--gold);
+  border-radius:8px; padding:11px 18px; font-size:13.5px; max-width:90vw;
+  box-shadow:0 8px 28px rgba(0,0,0,.4)}
+.toast.err{border-left-color:var(--bad)}
+.toast.ok{border-left-color:var(--ok)}
+
+
+/* ---- 入力欄は、どこに置いても同じ見た目にします ---- */
+input, select, textarea{
+  background:var(--panel2); border:1px solid var(--line); color:var(--ink);
+  border-radius:8px; padding:11px 13px; max-width:100%;
+}
+textarea{font-family:inherit; line-height:1.6; resize:vertical; width:100%}
+input[type="checkbox"], input[type="radio"]{padding:0; width:auto; accent-color:var(--gold)}
+input:focus, select:focus, textarea:focus{outline:2px solid var(--gold); outline-offset:1px}
+.field input, .field select, .field textarea{width:100%}
+.field span{font-size:12px; color:var(--muted); letter-spacing:.04em}
+
+/* ---- 選ばれている絞り込みボタン ---- */
+.btn[aria-selected="true"]{
+  background:var(--gold); border-color:var(--gold); color:var(--on-gold,#14191F); font-weight:700
+}
+
+/* ==========================================================================
+   共通ページで足した見た目
+   シフト希望・届出・許可証の画面で使います。
+   ========================================================================== */
+
+/* ---- 数字のまとまり（客単価・原価率など） ---- */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+       gap:10px; margin:4px 0 14px}
+.stat{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+      padding:11px 13px; display:flex; flex-direction:column; gap:4px}
+.stat .k{font-size:11.5px; letter-spacing:.06em; color:var(--muted)}
+.stat .v{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums}
+.stat .v small{font-size:12px; font-weight:400; color:var(--muted); margin-left:4px}
+.stat.warn{border-color:var(--warn)}
+.stat.warn .v{color:var(--warn)}
+
+/* ---- 入れる欄のならび ---- */
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0 14px}
+.grid3{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0 14px}
+.grid4{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0 14px}
+.field > span{font-size:12px; color:var(--muted); letter-spacing:.06em}
+.field textarea{background:var(--panel2); border:1px solid var(--line); color:var(--ink);
+      border-radius:9px; padding:10px 12px; font:inherit; line-height:1.6}
+textarea{background:var(--panel2); border:1px solid var(--line); color:var(--ink);
+      border-radius:9px; padding:10px 12px; font:inherit; line-height:1.6}
+
+/* ---- 説明の小さい字 ---- */
+.hint{color:var(--muted); font-size:12.5px; line-height:1.7; margin:8px 0}
+.muted{color:var(--muted)}
+.right{text-align:right}
+.big{font-size:21px; font-weight:700; font-variant-numeric:tabular-nums}
+.sub{color:var(--muted); font-size:12.5px}
+.total-row{text-align:right; padding:10px 2px; font-size:15px;
+      border-top:1px solid var(--line); margin-top:8px}
+.total-row b{font-size:19px; font-variant-numeric:tabular-nums}
+
+/* ---- 表 ---- */
+.tablewrap{overflow-x:auto}
+table.list th.num, table.list td.num{text-align:right; font-variant-numeric:tabular-nums}
+table.list tr.off td{opacity:.45}
+table.list tr.bad td{background:rgba(190,70,70,.07)}
+table.list td small{color:var(--muted); font-size:11.5px}
+table.mini{width:100%; border-collapse:collapse; font-size:13px}
+table.mini td, table.mini th{padding:6px 8px; border-bottom:1px solid var(--line)}
+table.mini td.num, table.mini th.num{text-align:right; font-variant-numeric:tabular-nums}
+
+/* ---- カード（卓・キッチン・本部） ---- */
+.card-head{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+.card-head b{font-size:17px}
+.card-head span{color:var(--muted); font-size:12px}
+.card-body{margin:9px 0; display:flex; flex-direction:column; gap:4px}
+.card-foot{display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end}
+.card.alert{border-color:var(--warn)}
+.card.doing{border-left:3px solid var(--gold)}
+
+/* ---- 席の空き ---- */
+.seats{display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px;
+       margin:8px 0 18px}
+.seat{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+      padding:11px 13px}
+.seat.busy{border-color:var(--gold-dim)}
+.seat-name{font-size:16px; font-weight:700}
+.seat-cap{color:var(--muted); font-size:12px; margin-bottom:6px}
+.seat-free{color:var(--ok); font-size:12.5px}
+.seat-list{margin:0; padding-left:16px; font-size:12.5px; line-height:1.8}
+
+/* ---- えらぶボタン ---- */
+.chips{display:flex; gap:8px; flex-wrap:wrap; margin:10px 0}
+.chip{display:inline-flex; align-items:center; gap:6px; background:var(--panel2);
+      border:1px solid var(--line); color:var(--ink); border-radius:999px;
+      padding:8px 15px; font:inherit; font-size:13.5px; cursor:pointer}
+.chip small{color:var(--muted); font-size:11px}
+.chip.on{background:var(--gold); border-color:var(--gold); color:var(--on-gold,#14191F); font-weight:700}
+.chip.on small{color:var(--on-gold,#14191F)}
+.chip input{display:none}
+
+/* ---- えらぶ一覧（注文を足す） ---- */
+.picklist{max-height:52vh; overflow-y:auto; margin-top:10px;
+      border:1px solid var(--line); border-radius:var(--radius)}
+.pickrow{display:flex; justify-content:space-between; gap:10px; width:100%;
+      background:transparent; border:0; border-bottom:1px solid var(--line);
+      color:var(--ink); padding:12px 14px; font:inherit; font-size:14px;
+      text-align:left; cursor:pointer}
+.pickrow:hover{background:var(--panel2)}
+.pickrow.off{opacity:.4; cursor:not-allowed}
+.pickrow .num{font-variant-numeric:tabular-nums; color:var(--muted)}
+
+/* ---- 伝票 ---- */
+.bill{background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius);
+      padding:16px}
+.bill-sum{margin-top:10px; border-top:1px solid var(--line); padding-top:10px;
+      display:flex; flex-direction:column; gap:5px}
+.bill-sum > div{display:flex; justify-content:space-between; gap:12px}
+.bill-sum b{font-variant-numeric:tabular-nums}
+.bill-sum .total{font-size:19px; border-top:1px solid var(--line); padding-top:7px}
+.bill-sum .small{color:var(--muted); font-size:12.5px}
+
+/* ---- QR ---- */
+.qrbox{display:flex; justify-content:center; padding:14px 0}
+.qrbox svg{border-radius:8px}
+
+/* ---- シフト表 ---- */
+table.shift{width:100%; border-collapse:collapse; font-size:12.5px}
+table.shift th{background:var(--panel2); color:var(--muted); font-size:11px;
+      letter-spacing:.06em; padding:8px 6px; border:1px solid var(--line); font-weight:700}
+table.shift td{border:1px solid var(--line); padding:0; vertical-align:top}
+table.shift td:first-child{padding:8px 10px; min-width:150px}
+table.shift td.num{text-align:right; padding:8px 10px; font-variant-numeric:tabular-nums}
+table.shift td.ng{background:rgba(190,70,70,.08)}
+table.shift td.want{background:rgba(90,150,110,.08)}
+.cellbtn{width:100%; min-height:62px; background:transparent; border:0; color:var(--ink);
+      font:inherit; font-size:12px; line-height:1.5; padding:6px 4px; cursor:pointer}
+.cellbtn:hover{background:var(--panel2)}
+.cellbtn b{color:var(--gold)}
+.cellbtn small{color:var(--muted)}
+
+/* ---- 折りたたみ ---- */
+details{margin-top:10px; font-size:13px}
+details summary{cursor:pointer; color:var(--muted)}
+details ul{margin:8px 0 0; padding-left:18px; line-height:1.9}
+
+/* ---- せまい画面 ---- */
+@media (max-width:720px){
+  .stats{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+  .stat .v{font-size:17px}
+  header .who a.btn{padding:5px 9px !important; font-size:12px}
+}
+
+/* ---- お店で希望を入れるときの、日にちのマス ---- */
+.wishgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr));
+      gap:6px; margin:10px 0}
+.wishcell{border:1px solid var(--line); background:var(--panel2); color:var(--ink);
+      border-radius:10px; padding:7px 3px; min-height:62px; font:inherit;
+      display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer}
+.wishcell b{font-size:14px}
+.wishcell span{font-size:11px; color:var(--muted)}
+.wishcell small{font-size:10.5px; color:var(--muted); line-height:1.3; text-align:center}
+.wishcell.ok{background:rgba(90,150,110,.18); border-color:rgba(90,150,110,.6)}
+.wishcell.want{background:rgba(190,150,60,.18); border-color:rgba(190,150,60,.6)}
+.wishcell.ng{background:rgba(190,70,70,.16); border-color:rgba(190,70,70,.55)}
+.wishcell.ok small, .wishcell.want small, .wishcell.ng small{color:var(--ink)}
+
+/* 折り返したくないセル */
+td.nw, th.nw { white-space: nowrap }
+
+/* LINEの登録：友だち追加のQRコード */
+.linejoin{display:flex; gap:18px; align-items:center; flex-wrap:wrap;
+  justify-content:space-between}
+.linejoin .ljtext{flex:1 1 320px; min-width:260px}
+.linejoin .ljtext p{margin:10px 0}
+/* <a class="btn"> は既定が inline なので、上下の余白が前の行に食いこみます。
+   ここだけ inline-block にして、行をまたがないようにします。 */
+.linejoin .ljtext a.btn{display:inline-block; line-height:1.2;
+  margin:14px 0 2px; text-decoration:none}
+.linejoin .ljtext p.ljurl{margin:2px 0 0; word-break:break-all}
+.linejoin .ljimg{flex:0 0 auto; width:168px; height:168px;
+  border:1px solid var(--line); border-radius:12px; background:#fff; padding:8px}
+@media(max-width:520px){.linejoin{justify-content:center}
+  .linejoin .ljimg{width:200px; height:200px}}
+
+/* ============================================================================
+   画面の見た目（着せ替え）
+   020_mitame.sql ＋ ui.js ＋ theme.html とセットで使います。
+
+   ・body.theme-*   … 見せ方（4種類）
+   ・body.force-*   … ライト／ダークの上書き。theme-* より後に書いて勝たせます
+   ・body.font-*    … フォント
+   ============================================================================ */
+
+/* 見せ方：夜の画面（もともとの暗い配色） */
+body.theme-night{
+  --bg:#0E1319; --panel:#161D26; --panel2:#1D2732; --line:#2A3746;
+  --ink:#E8EEF4; --muted:#8FA1B3; --dim:#5E6E7E;
+  --gold:#C9A65A; --gold-dim:#8A7136;
+}
+
+/* 見せ方：高コントラスト（明暗差を強く。文字の大きさは標準のまま） */
+body.theme-contrast{
+  --bg:#FFFFFF; --panel:#FFFFFF; --panel2:#F2F4F6; --line:#5A6672;
+  --ink:#000000; --muted:#2E3A46; --dim:#4A5763;
+  --gold:#6B4E00; --gold-dim:#8C7433;
+  --ok:#0B6B3A; --warn:#8A4B00; --bad:#A4121B;
+}
+body.theme-contrast .btn{border-width:2px}
+body.theme-contrast table.list th{border-bottom-width:2px}
+body.theme-contrast .hint, body.theme-contrast small{color:var(--muted)}
+
+/* ライト／ダークの上書き（theme-* より後に置くこと） */
+body.force-light{
+  --bg:#F2F4F7; --panel:#FFFFFF; --panel2:#F7F9FB; --line:#DDE3EA;
+  --ink:#16202A; --muted:#5C6B7A; --dim:#8494A3;
+  --gold:#9A7B2E; --gold-dim:#C6B285;
+}
+body.force-dark{
+  --bg:#0E1319; --panel:#161D26; --panel2:#1D2732; --line:#2A3746;
+  --ink:#E8EEF4; --muted:#8FA1B3; --dim:#5E6E7E;
+  --gold:#C9A65A; --gold-dim:#8A7136;
+}
+
+/* フォント。どれも端末に入っているものを順に当てるので、
+   読みこみで待たされることはありません。 */
+body.font-udp{
+  font-family:"BIZ UDPGothic","BIZ UDGothic","Noto Sans JP","Hiragino Sans",
+              "Yu Gothic",sans-serif;
+}
+body.font-sans{
+  font-family:"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Yu Gothic",
+              "Meiryo",sans-serif;
+}
+body.font-round{
+  font-family:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Quicksand",
+              "Noto Sans JP","Hiragino Sans",sans-serif;
+}
+body.font-serif{
+  font-family:"Noto Serif JP","Hiragino Mincho ProN","Yu Mincho","MS PMincho",serif;
+}
+body.font-system{
+  font-family:system-ui,-apple-system,"Segoe UI","Hiragino Sans",sans-serif;
+}
+
+/* ============================================================================
+   画面の見た目の設定ページ（theme.html）
+   ============================================================================ */
+
+.mtGrid{display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+        margin:12px 0 22px}
+.mtCard{border:2px solid var(--line); border-radius:var(--radius); background:var(--panel);
+        padding:0; overflow:hidden; display:flex; flex-direction:column}
+.mtCard.on{border-color:var(--gold)}
+.mtCard .mtShot{height:120px; padding:12px; display:flex; flex-direction:column; gap:7px;
+        justify-content:center; border-bottom:1px solid var(--line)}
+.mtCard .mtShot i{display:block; height:9px; border-radius:4px; background:currentColor;
+        opacity:.32}
+.mtCard .mtShot i.w60{width:60%} .mtCard .mtShot i.w85{width:85%}
+.mtCard .mtShot b{font-size:13px; font-weight:700}
+.mtCard .mtShot .mtBtn{align-self:flex-start; padding:5px 12px; border-radius:6px;
+        font-size:12px; font-weight:700}
+.mtCard .mtBody{padding:12px 14px 14px; flex:1; display:flex; flex-direction:column}
+.mtCard h3{margin:0 0 2px; font-size:15px}
+.mtCard .mtWho{font-size:12.5px; color:var(--gold); margin:0 0 6px}
+.mtCard p{margin:0 0 12px; font-size:13px; line-height:1.75; color:var(--muted); flex:1}
+.mtCard .btn{width:100%}
+
+.mtSwatch{display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 4px}
+.mtSwatch button{display:inline-flex; align-items:center; gap:7px; padding:7px 13px;
+        border:1px solid var(--line); border-radius:999px; background:var(--panel);
+        color:var(--ink); font:inherit; font-size:13.5px; cursor:pointer}
+.mtSwatch button[aria-pressed="true"]{border-color:var(--gold); border-width:2px; padding:6px 12px}
+.mtSwatch button .dot{width:15px; height:15px; border-radius:50%;
+        border:1px solid var(--line); flex:none}
+.mtSwatch input[type=color]{width:34px; height:28px; padding:0; border:1px solid var(--line);
+        border-radius:6px; background:none; cursor:pointer}
+
+.mtPrev{border:1px dashed var(--line); border-radius:var(--radius); padding:16px 18px;
+        margin-top:18px}
+.mtPrev h4{margin:0 0 6px; font-size:15px}
+.mtPrev p{margin:0; font-size:14px; line-height:1.8; color:var(--muted)}
+.mtWarn{margin-top:10px}
+
+/* ============================================================================
+   背景のかざり（art.js が出します）
+   ・うんと薄く、ぼかして出します
+   ・クリックはぜんぶ通り抜けます
+   ・「動きを減らす」設定の端末では動かしません
+   ============================================================================ */
+
+#dandoriArt{
+  position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+  color:var(--ink);
+}
+#dandoriArt svg{display:block}
+
+/*  かざりを出しているときは、中身をその上に置きます。
+    body の class に頼らず、かざりの「あと」にあるものを持ち上げます。
+    （画面のJSが class を書きかえても、かならず効きます） */
+#dandoriArt ~ #login,
+#dandoriArt ~ #app,
+#dandoriArt ~ .backbar,
+#dandoriArt ~ #modalRoot,
+#dandoriArt ~ #toast,
+body.art-on > #login,
+body.art-on > #app,
+body.art-on > .backbar{position:relative; z-index:1}
+
+/* --------------------------------------------------------------- ポップ */
+/*  色つきなので、白黒のときより少し薄めにしています。 */
+#dandoriArt.da-pop{opacity:.20}
+#dandoriArt.da-pop .daFly{
+  position:absolute; top:-14vh;
+  animation-name:daFly; animation-timing-function:linear;
+  animation-iteration-count:infinite;
+}
+@keyframes daFly{
+  0%  {transform:translate3d(0,-14vh,0) rotate(0deg)}
+  50% {transform:translate3d(var(--sway,20px),56vh,0) rotate(180deg)}
+  100%{transform:translate3d(0,126vh,0) rotate(360deg)}
+}
+
+/* --------------------------------------------------------------- クール */
+#dandoriArt.da-cool{opacity:.16}
+#dandoriArt.da-cool .daBase,
+#dandoriArt.da-cool .daSpin,
+#dandoriArt.da-cool .daBall,
+#dandoriArt.da-cool .daPhoto{position:absolute; inset:0}
+#dandoriArt.da-cool .daBase svg,
+#dandoriArt.da-cool .daSpin svg,
+#dandoriArt.da-cool .daBall svg{width:100%; height:100%; filter:blur(2.5px)}
+#dandoriArt.da-cool .daPhoto{
+  background-size:cover; background-position:center; filter:blur(3px);
+}
+#dandoriArt.da-cool .daSpin{
+  animation:daSpin 26s linear infinite; transform-origin:50% 36%;
+}
+@keyframes daSpin{to{transform:rotate(360deg)}}
+
+/*  暗い画面では沈むので、少し強めに出します */
+body.theme-night #dandoriArt.da-pop,
+body.force-dark  #dandoriArt.da-pop{opacity:.26}
+body.theme-night #dandoriArt.da-cool,
+body.force-dark  #dandoriArt.da-cool{opacity:.22}
+
+/*  高コントラストのときは、読みやすさを優先してうんと薄くします */
+body.theme-contrast #dandoriArt{opacity:.07}
+
+/*  動きが苦手な方の端末では、止めます */
+@media (prefers-reduced-motion: reduce){
+  #dandoriArt.da-pop .daFly,
+  #dandoriArt.da-cool .daSpin{animation:none}
+}
+
+/*  印刷には出しません */
+@media print{#dandoriArt{display:none}}
+
+/* 背景に使う写真をえらぶところ */
+.mtHits{display:grid; gap:8px; margin-top:12px;
+  grid-template-columns:repeat(auto-fill,minmax(122px,1fr))}
+.mtHits button{padding:0; border:2px solid var(--line); border-radius:10px;
+  background:var(--panel2); overflow:hidden; cursor:pointer; aspect-ratio:4/3}
+.mtHits button[aria-pressed="true"]{border-color:var(--gold)}
+.mtHits img{width:100%; height:100%; object-fit:cover; display:block}
+.mtNowShot{display:inline-block; width:104px; height:66px; border-radius:8px;
+  border:1px solid var(--line); object-fit:cover; vertical-align:middle;
+  margin-right:10px}
+
+/* ============================================================================
+   左の目次（menu.js とセット）   __DANDORI_MENU__
+   ============================================================================ */
+
+.side-moved{display:none !important}
+
+#sidemenu{position:fixed; top:0; left:0; bottom:0; width:222px; z-index:46;
+  background:var(--panel2); border-right:1px solid var(--line);
+  overflow:auto; -webkit-overflow-scrolling:touch;
+  transform:translateX(-100%); transition:transform .18s ease}
+html.side-open #sidemenu{transform:none}
+
+#sideVeil{position:fixed; inset:0; z-index:45; background:rgba(0,0,0,.45); display:none}
+html.side-open #sideVeil{display:block}
+
+.side-top{padding:16px 16px 12px; border-bottom:1px solid var(--line)}
+.side-brand{display:block; font-size:11px; letter-spacing:.18em; color:var(--gold);
+  font-weight:700}
+.side-kind{display:block; font-size:14.5px; font-weight:700; margin-top:3px;
+  color:var(--ink)}
+
+#sidemenu nav{padding:6px 8px 30px}
+.side-g{font-size:11px; letter-spacing:.1em; color:var(--muted); font-weight:700;
+  padding:15px 10px 5px}
+.side-sep{height:1px; background:var(--line); margin:14px 10px 6px}
+
+.side-i{display:flex; align-items:center; gap:10px; padding:9px 10px;
+  border-radius:9px; text-decoration:none; color:var(--ink);
+  font-size:13.5px; line-height:1.35}
+.side-i:hover{background:rgba(127,127,127,.14)}
+.side-i .n{flex:none; width:19px; font-size:10.5px; color:var(--muted); opacity:.75;
+  font-variant-numeric:tabular-nums}
+.side-i .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.side-i.on{background:var(--gold); color:var(--on-gold,#14191F); font-weight:700}
+.side-i.on .n{color:rgba(0,0,0,.45); opacity:1}
+
+#sideBtn{padding:7px 12px; font-size:16px; line-height:1}
+
+@media (min-width:1000px){
+  html.hasside #sidemenu{transform:none}
+  html.hasside header .brand{display:none}
+  html.hasside #app{padding-left:222px}
+  html.hasside #sideBtn{display:none}
+  html.hasside #sideVeil{display:none !important}
+}
+
+@media print{
+  #sidemenu, #sideVeil, #sideBtn{display:none !important}
+  html.hasside #app{padding-left:0}
+}

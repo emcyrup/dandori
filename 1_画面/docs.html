@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>届出・許可証</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>だんどり</h1>
+    <p>届出・許可証</p>
+    <div class="field">
+      <label for="email">メールアドレス</label>
+      <input id="email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn primary" style="width:100%" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">DANDORI</span>
+    <select id="storeSel" aria-label="店舗"></select>
+    <span class="who">
+<span id="meName" style="display:none"></span>
+      <button class="btn ghost" id="logoutBtn" style="padding:6px 12px">ログアウト</button>
+    </span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="doc" aria-selected="true">届出・許可証</button>
+    <button role="tab" data-view="line" aria-selected="false">LINEの登録</button>
+  </nav>
+
+  <main>
+    <section id="view-doc">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div class="row">
+          <button class="btn primary" id="adNew" data-boss="1">書類を足す</button>
+          <button class="btn ghost" id="adSeed" data-boss="1">ひな形を入れる</button>
+        </div>
+        <div class="row"><button class="btn ghost" id="adReload">更新</button></div>
+      </div>
+      <div id="adAlert"></div>
+      <div class="tablewrap"><table class="list" id="adTable"></table></div>
+    </section>
+
+    <section id="view-line" class="hidden">
+      <div class="row" style="justify-content:flex-end;margin-bottom:12px">
+        <button class="btn ghost" id="lnReload">更新</button>
+      </div>
+      <div id="lnHelp"></div>
+      <div class="tablewrap"><table class="list" id="lnTable"></table></div>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="perm.js"></script>
+<script src="art.js"></script>
+<script src="photo.js"></script>
+<script src="ui.js"></script>
+<script src="pw.js"></script>
+<script src="kyotsu.js"></script>
+<script src="docs.js"></script>
+<script src="menu.js"></script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ナイトだんどり｜締め・日報</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ======================= ログイン ======================= -->
+<div id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>ナイトだんどり</h1>
+    <p>締め・日報</p>
+    <div class="field">
+      <label for="email">メールアドレス</label>
+      <input id="email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn primary" style="width:100%" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<!-- ======================= 本体 ======================= -->
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">DANDORI</span>
+    <select id="storeSel" aria-label="店舗"></select>
+    <span class="who">
+<a class="btn ghost" href="guide.html#day" target="_blank" rel="noopener" style="padding:6px 12px;text-decoration:none">使い方</a>
+      <span id="meName" style="display:none"></span>
+      <button class="btn ghost" id="logoutBtn" style="padding:6px 12px">ログアウト</button>
+    </span>
+  </header>
+
+  <main>
+
+    <!-- ---------- その日の締め ---------- -->
+    <section>
+      <div class="panel">
+        <h2>その日の締め</h2>
+        <div class="row" style="margin-bottom:14px">
+          <label class="field" style="margin:0">
+            <span style="font-size:12px;color:var(--muted)">営業日</span>
+            <input id="dayDate" type="date">
+          </label>
+          <button class="btn ghost" id="daySumBtn" style="margin-top:18px">集計する</button>
+        </div>
+        <div id="daySummary"></div>
+      </div>
+
+      <!-- ---------- その日の日報 ---------- -->
+      <div class="panel" style="margin-top:14px">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">その日の日報</h2>
+          <button class="btn ghost" id="nAi">AIで下書き</button>
+        </div>
+
+        <p class="hint" style="margin:8px 0 10px">
+          <b>①</b> 下の「その日のひとこと」に一行だけ書きます
+          <b>②</b> 右上の「AIで下書き」を押します
+          <b>③</b> その下の「本文」に下書きが出ます。<br>
+          AIは、このひとことと、上で集計した数字だけを見て文章にします。
+          金額や件数をAIが作ることはありません。
+        </p>
+
+        <label class="field"><span>その日のひとこと（AIの下書きの材料になります）</span>
+          <div class="row">
+            <input id="nMemo" type="text" maxlength="200" style="flex:1"
+                   placeholder="例）雨で出足が遅かったけど、21時から満席。新規が3組。">
+            <button class="btn ghost" id="nMemoSave">ひとことを保存</button>
+          </div>
+        </label>
+
+        <div id="nState" style="margin-top:12px"></div>
+        <label class="field"><span>本文</span>
+          <textarea id="nBody" rows="9" placeholder="「AIで下書き」を押すと、ひとことと、その日の数字から文章をつくります。"></textarea>
+        </label>
+        <div class="row" style="justify-content:space-between">
+          <span style="color:var(--muted);font-size:12.5px">
+            AIは文章を書くだけです。数字はこのツールの記録から渡しています。
+          </span>
+          <span class="row" style="gap:6px">
+            <button class="btn ghost" id="nSave">下書きとして保存</button>
+            <button class="btn primary" id="nFix">確定する</button>
+          </span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+
+<!-- Supabase クライアント（v2.45.4）。外部CDNに依存しないよう同梱しています -->
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="perm.js"></script>
+<script src="art.js"></script>
+<script src="ui.js"></script>
+<script src="pw.js"></script>
+<script src="close.js"></script>
+<script src="menu.js"></script>
+</body>
+</html>

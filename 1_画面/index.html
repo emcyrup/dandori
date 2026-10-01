@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ナイトだんどり｜伝票・会計</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ======================= ログイン ======================= -->
+<div id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>ナイトだんどり</h1>
+    <p>伝票・会計</p>
+    <div class="field">
+      <label for="email">メールアドレス</label>
+      <input id="email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn primary" style="width:100%" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<!-- ======================= 本体 ======================= -->
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">DANDORI</span>
+    <select id="storeSel" aria-label="店舗"></select>
+    <span class="who">
+<a class="btn ghost" href="guide.html#ticket" target="_blank" rel="noopener" style="padding:6px 12px;text-decoration:none">使い方</a>
+      <span id="meName" style="display:none"></span>
+      <button class="btn ghost" id="logoutBtn" style="padding:6px 12px">ログアウト</button>
+    </span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="hall" aria-selected="true">ホール</button>
+    <button role="tab" data-view="recv" aria-selected="false">売掛</button>
+  </nav>
+
+  <main>
+
+    <!-- ---------- ホール ---------- -->
+    <section id="view-hall">
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <button class="btn primary" id="openBtn">卓を開く</button>
+          <button class="btn ghost" id="reloadBtn">更新</button>
+        </div>
+        <span class="who mono" id="hallSummary"></span>
+      </div>
+      <div class="cards" id="hallCards"></div>
+      <div class="empty hidden" id="hallEmpty">開いている卓はありません。</div>
+    </section>
+
+    <!-- ---------- 伝票 ---------- -->
+    <section id="view-ticket" class="hidden">
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn ghost" id="backBtn">← ホールへ</button>
+        <strong id="ticketTitle" style="font-size:17px"></strong>
+        <span class="who mono" id="ticketMeta"></span>
+      </div>
+
+      <div class="ticket">
+        <div class="panel">
+          <h2>メニュー</h2>
+          <div class="row" style="margin-bottom:12px">
+            <label class="field" style="margin:0;flex:1 1 140px">
+              <span style="font-size:12px;color:var(--muted)">バック先のキャスト</span>
+              <select id="castSel"></select>
+            </label>
+            <label class="field" style="margin:0;width:96px">
+              <span style="font-size:12px;color:var(--muted)">数量</span>
+              <input id="qtyInput" type="number" min="1" value="1" inputmode="numeric">
+            </label>
+          </div>
+          <div id="menuArea"></div>
+        </div>
+
+        <div class="panel">
+          <h2>伝票</h2>
+          <div class="items" id="itemList"></div>
+          <div class="totals" id="totals"></div>
+          <div class="row" style="margin-top:14px">
+            <button class="btn ghost" id="discountBtn">値引き</button>
+            <button class="btn primary" id="payBtn" style="flex:1">会計する</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="bottleBox" style="margin-top:14px">
+        <h2>このお客様のキープ</h2>
+        <div id="bottleList"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn ghost" id="bottleAdd">キープを登録</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 売掛 ---------- -->
+    <section id="view-recv" class="hidden">
+      <div class="panel">
+        <h2>未回収のツケ</h2>
+        <div class="scroll"><table class="list" id="recvTable"></table></div>
+        <div class="empty hidden" id="recvEmpty">未回収のツケはありません。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+
+<!-- Supabase クライアント（v2.45.4）。外部CDNに依存しないよう同梱しています -->
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="perm.js"></script>
+<script src="art.js"></script>
+<script src="photo.js"></script>
+<script src="ui.js"></script>
+<script src="pw.js"></script>
+<script src="app.js"></script>
+<script src="menu.js"></script>
+</body>
+</html>

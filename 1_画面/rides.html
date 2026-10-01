@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ナイトだんどり｜送り</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+<style>
+.ride{display:grid; grid-template-columns:38px 1fr auto; gap:12px; align-items:center;
+  background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:13px 15px}
+.ride.onboard{border-color:var(--gold)}
+.ride.done{opacity:.55}
+.ride .no{font-family:inherit; font-size:19px; font-weight:700; color:var(--gold);
+  text-align:center; font-variant-numeric:tabular-nums}
+.ride .who{font-size:16px; font-weight:600}
+.ride .meta{color:var(--muted); font-size:12.5px; display:flex; gap:10px; flex-wrap:wrap; margin-top:2px}
+.ride .acts{display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end}
+.ride .acts .btn{padding:7px 12px; font-size:13px}
+.rides{display:flex; flex-direction:column; gap:9px}
+.grp{font-size:12px; letter-spacing:.1em; color:var(--muted); font-weight:700;
+  margin:16px 0 7px}
+@media (max-width:640px){
+  .ride{grid-template-columns:32px 1fr; }
+  .ride .acts{grid-column:1 / -1; justify-content:flex-start; margin-top:8px}
+}
+</style>
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>ナイトだんどり</h1>
+    <p>送り</p>
+    <div class="field"><label for="email">メールアドレス</label>
+      <input id="email" type="email" autocomplete="username" required></div>
+    <div class="field"><label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required></div>
+    <button class="btn primary" style="width:100%" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">DANDORI</span>
+    <select id="storeSel" aria-label="店舗"></select>
+    <span class="who">
+<a class="btn ghost" href="guide.html#ride" target="_blank" rel="noopener" style="padding:6px 12px;text-decoration:none">使い方</a>
+      <span id="meName" style="display:none"></span>
+      <button class="btn ghost" id="logoutBtn" style="padding:6px 12px">ログアウト</button>
+    </span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="today" aria-selected="true">今夜の送り</button>
+    <button role="tab" data-view="sum"   aria-selected="false">集計</button>
+    <button role="tab" data-view="area"  aria-selected="false">エリア設定</button>
+  </nav>
+
+  <main>
+
+    <!-- ---------- 今夜の送り ---------- -->
+    <section id="view-today">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <div class="row">
+          <button class="btn primary" id="rideAdd">送りを追加</button>
+          <button class="btn ghost" id="rideReload">更新</button>
+        </div>
+        <span class="who mono" id="rideSummary"></span>
+      </div>
+      <div class="rides" id="rideList"></div>
+      <div class="empty hidden" id="rideEmpty">今夜の送りは、まだ登録されていません。</div>
+    </section>
+
+    <!-- ---------- 集計 ---------- -->
+    <section id="view-sum" class="hidden">
+      <div class="panel">
+        <h2>送りの集計</h2>
+        <div class="row" style="margin-bottom:12px">
+          <label class="field" style="margin:0"><span style="font-size:12px;color:var(--muted)">開始</span>
+            <input id="sFrom" type="date"></label>
+          <label class="field" style="margin:0"><span style="font-size:12px;color:var(--muted)">終了</span>
+            <input id="sTo" type="date"></label>
+          <button class="btn primary" id="sGo" style="margin-top:18px">集計する</button>
+        </div>
+        <div id="sumArea"></div>
+      </div>
+    </section>
+
+    <!-- ---------- エリア設定 ---------- -->
+    <section id="view-area" class="hidden">
+      <div class="panel">
+        <h2>エリアと送り代</h2>
+        <p style="color:var(--muted);font-size:12.5px;margin:-6px 0 12px">
+          送りを登録するときにエリアを選ぶと、お客様からいただく額とドライバーへ支払う額が自動で入ります。
+        </p>
+        <div class="scroll"><table class="list" id="areaTable"></table></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn primary" id="areaAdd">エリアを追加</button>
+          <button class="btn ghost" id="areaSeed">ひな形を入れる</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="perm.js"></script>
+<script src="art.js"></script>
+<script src="photo.js"></script>
+<script src="ui.js"></script>
+<script src="pw.js"></script>
+<script src="rides.js"></script>
+<script src="menu.js"></script>
+</body>
+</html>

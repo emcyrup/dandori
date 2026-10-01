@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>パスワードの変更</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+<style>
+  body.rs{display:flex;align-items:center;justify-content:center;min-height:100vh;
+    padding:16px;margin:0}
+  .rs-box{background:var(--panel,#fff);color:var(--ink,#222);
+    border:1px solid var(--line,#ddd);border-radius:16px;
+    padding:26px 26px 22px;width:100%;max-width:440px;
+    box-shadow:0 18px 50px rgba(0,0,0,.14)}
+  .rs-box h1{margin:0 0 4px;font-size:20px}
+  .rs-box p.hint{margin:6px 0 18px;font-size:13.5px;line-height:1.8;
+    color:var(--muted,#888)}
+  .rs-box label{display:block;margin-bottom:13px}
+  .rs-box label span{display:block;font-size:12.5px;color:var(--muted,#888);
+    margin-bottom:4px}
+  .rs-box input{width:100%;box-sizing:border-box;padding:12px;font-size:16px;
+    font-family:inherit;border:1px solid var(--line,#ddd);border-radius:10px;
+    background:var(--panel2,var(--panel,#fff));color:var(--ink,#222)}
+  #rsMsg{font-size:13.5px;line-height:1.8;margin:12px 0 0;min-height:1.2em}
+  #rsMsg.ng{color:var(--bad,#b4564b)}
+  #rsMsg.ok{color:var(--ok,#4c8f6a)}
+  .rs-row{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .rs-back{display:block;margin-top:16px;text-align:center;font-size:13px;
+    color:var(--muted,#888)}
+  .hidden{display:none}
+</style>
+</head>
+<body class="rs">
+
+<div class="rs-box">
+  <h1>パスワードの変更</h1>
+
+  <div id="rsWait">
+    <p class="hint">リンクを確かめています。少しお待ちください…</p>
+  </div>
+
+  <div id="rsBad" class="hidden">
+    <p class="hint">
+      このリンクは使えませんでした。期限が切れているか、
+      すでに一度お使いになったのかもしれません。<br>
+      お手数ですが、ログイン画面の「パスワードをお忘れですか」から、
+      もういちどお送りください。
+    </p>
+  </div>
+
+  <div id="rsForm" class="hidden">
+    <p class="hint">新しいパスワードを決めてください。8文字以上にしてください。</p>
+    <label><span>新しいパスワード</span>
+      <input id="rsA" type="password" autocomplete="new-password"></label>
+    <label><span>もういちど、同じものを</span>
+      <input id="rsB" type="password" autocomplete="new-password"></label>
+    <p id="rsMsg"></p>
+    <div class="rs-row">
+      <button class="btn primary" id="rsSave">変える</button>
+    </div>
+  </div>
+
+  <a class="rs-back" href="index.html">ログイン画面へ</a>
+</div>
+
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="reset.js"></script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ナイトだんどり｜売上</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+<style>
+/* ---- 売上画面だけで使うもの ---- */
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(192px,1fr)); gap:10px}
+.tile{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:15px 17px}
+.tile .lb{font-size:12px; color:var(--muted); letter-spacing:.04em}
+.tile .v{font-size:22px; font-weight:700; line-height:1.35; margin-top:3px; white-space:nowrap;
+  font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+.tile .sub{font-size:12px; color:var(--muted); margin-top:2px}
+.tile.lead .v{color:var(--gold); font-size:25px}
+.chart{position:relative; margin-top:6px}
+.chart svg{display:block; width:100%; height:auto}
+.gl{stroke:var(--line); stroke-width:1}
+.gtxt{fill:var(--muted); font-size:10.5px; font-family:inherit}
+.bar{fill:var(--gold); rx:3}
+.bar.dim{fill:var(--line)}
+.tip{position:absolute; pointer-events:none; background:var(--panel2); color:var(--ink);
+  border:1px solid var(--line); border-radius:7px; padding:8px 11px; font-size:12.5px;
+  white-space:nowrap; box-shadow:0 6px 20px rgba(0,0,0,.35); transform:translate(-50%,-115%);
+  opacity:0; transition:opacity .12s}
+.tip b{display:block; font-size:14px; font-variant-numeric:tabular-nums}
+.hbars{display:flex; flex-direction:column; gap:9px; margin-top:4px}
+.hb{display:grid; grid-template-columns:96px 1fr auto; gap:11px; align-items:center; font-size:13.5px}
+.hb .nm{color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.hb .tr{display:block; background:var(--panel2); border-radius:4px; height:14px; overflow:hidden}
+.hb .fl{display:block; height:100%; background:var(--gold); border-radius:0 3px 3px 0}
+.hb .vl{font-variant-numeric:tabular-nums; color:var(--ink); min-width:100px; text-align:right;
+  font-size:13px; line-height:1.45}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px}
+@media (max-width:760px){ .grid2{grid-template-columns:1fr} .hb{grid-template-columns:78px 1fr auto} }
+</style>
+</head>
+<body>
+
+<!-- ======================= ログイン ======================= -->
+<div id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>ナイトだんどり</h1>
+    <p>売上</p>
+    <div class="field">
+      <label for="email">メールアドレス</label>
+      <input id="email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn primary" style="width:100%" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<!-- ======================= 本体 ======================= -->
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">DANDORI</span>
+    <select id="storeSel" aria-label="店舗"></select>
+    <span class="who">
+<a class="btn ghost" href="guide.html#sales" target="_blank" rel="noopener" style="padding:6px 12px;text-decoration:none">使い方</a>
+      <span id="meName" style="display:none"></span>
+      <button class="btn ghost" id="logoutBtn" style="padding:6px 12px">ログアウト</button>
+    </span>
+  </header>
+
+  <main>
+
+    <!-- ---------- 今日 ---------- -->
+    <section>
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <strong style="font-size:17px">今日の売上</strong>
+        <span class="who mono" id="todayDate"></span>
+      </div>
+      <div class="tiles" id="todayTiles"></div>
+    </section>
+
+    <!-- ---------- 期間 ---------- -->
+    <section style="margin-top:26px">
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn ghost" data-range="7">直近7日</button>
+        <button class="btn ghost" data-range="30">直近30日</button>
+        <button class="btn ghost" data-range="month">今月</button>
+        <button class="btn ghost" data-range="lastmonth">先月</button>
+        <label class="field" style="margin:0"><span style="font-size:12px;color:var(--muted)">開始</span>
+          <input id="rFrom" type="date"></label>
+        <label class="field" style="margin:0"><span style="font-size:12px;color:var(--muted)">終了</span>
+          <input id="rTo" type="date"></label>
+        <button class="btn primary" id="rGo" style="margin-top:18px">表示</button>
+      </div>
+
+      <div class="tiles" id="rangeTiles"></div>
+
+      <div class="panel" style="margin-top:14px">
+        <h2>日別の売上</h2>
+        <div class="chart" id="dailyChart"></div>
+      </div>
+
+      <div class="grid2">
+        <div class="panel">
+          <h2>何で売れているか</h2>
+          <div class="hbars" id="catBars"></div>
+        </div>
+        <div class="panel">
+          <h2>キャスト別の売上</h2>
+          <div class="hbars" id="castBars"></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h2>よく来られているお客様</h2>
+        <div class="scroll"><table class="list" id="custTable"></table></div>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h2>日別の明細</h2>
+        <div class="scroll"><table class="list" id="dailyTable"></table></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn ghost" id="csvBtn">この期間をCSVで保存</button>
+          <span style="color:var(--muted);font-size:12.5px">Excelでそのまま開けます</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="perm.js"></script>
+<script src="art.js"></script>
+<script src="photo.js"></script>
+<script src="ui.js"></script>
+<script src="pw.js"></script>
+<script src="sales.js"></script>
+<script src="menu.js"></script>
+</body>
+</html>

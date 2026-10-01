@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ナイトだんどり｜設定</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ======================= ログイン ======================= -->
+<div id="login" class="hidden">
+  <form class="login-box" id="loginForm">
+    <h1>ナイトだんどり</h1>
+    <p>設定</p>
+    <div class="field">
+      <label for="email">メールアドレス</label>
+      <input id="email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn primary" style="width:100%" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<!-- ======================= 本体 ======================= -->
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">DANDORI</span>
+    <select id="storeSel" aria-label="店舗"></select>
+    <span class="who">
+<a class="btn ghost" href="guide.html#setting" target="_blank" rel="noopener" style="padding:6px 12px;text-decoration:none">使い方</a>
+      <span id="meName" style="display:none"></span>
+      <button class="btn ghost" id="logoutBtn" style="padding:6px 12px">ログアウト</button>
+    </span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="store" aria-selected="true">店舗の設定</button>
+    <button role="tab" data-view="menu"  aria-selected="false">料金マスタ</button>
+    <button role="tab" data-view="staff" aria-selected="false">スタッフ</button>
+    <button role="tab" data-view="imp"   aria-selected="false">過去データ取込</button>
+    <button role="tab" data-view="ai"    aria-selected="false">AI・送信</button>
+  </nav>
+
+  <main>
+
+    <!-- ---------- 店舗の設定 ---------- -->
+    <section id="view-store">
+      <div class="panel" style="max-width:560px">
+        <h2>この店舗の設定</h2>
+        <div class="field"><label for="s_name">店舗名</label><input id="s_name"></div>
+        <div class="field"><label for="s_tel">電話番号</label><input id="s_tel"></div>
+
+        <div class="field">
+          <label for="s_cutoff">営業日の切り替え時刻</label>
+          <input id="s_cutoff" type="time">
+          <span style="font-size:12px;color:var(--muted)">
+            この時刻より前の伝票は、前日の売上として集計します（例：05:00 なら深夜2時の会計は前日ぶん）
+          </span>
+        </div>
+
+        <div class="row">
+          <div class="field" style="flex:1"><label for="s_service">サービス料（%）</label>
+            <input id="s_service" type="number" min="0" max="100" step="0.5"></div>
+          <div class="field" style="flex:1"><label for="s_tax">消費税（%）</label>
+            <input id="s_tax" type="number" min="0" max="100" step="0.5"></div>
+        </div>
+
+        <div class="field">
+          <label for="s_incl">料金マスタの入力方法</label>
+          <select id="s_incl">
+            <option value="0">税抜きで入力する（会計時に税を足す）</option>
+            <option value="1">税込みで入力する（会計時に税を足さない）</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="s_minwage">地域の最低賃金（円／時）</label>
+          <input id="s_minwage" type="number" min="0" inputmode="numeric">
+          <span style="font-size:12px;color:var(--muted)">
+            給与計算のときに下回ると警告が出ます。0なら判定しません
+          </span>
+        </div>
+
+        <div class="field">
+          <label for="s_theme">画面の見た目（着せ替え）</label>
+          <select id="s_theme">
+            <option value="dark">濃色（カウンターの中で使う）</option>
+            <option value="standard">標準（明るい画面）</option>
+            <option value="large">大きな文字（1.6倍）</option>
+          </select>
+        </div>
+
+        <div class="row" style="margin-top:8px">
+          <button class="btn primary" id="storeSave">保存する</button>
+          <span id="storeCalcHint" style="color:var(--muted);font-size:12.5px"></span>
+        </div>
+      </div>
+
+      <div class="panel" style="max-width:560px;margin-top:14px">
+        <h2>店舗を増やす</h2>
+        <div class="row">
+          <input id="newStoreName" placeholder="○○店" style="flex:1;background:var(--panel2);
+            border:1px solid var(--line);border-radius:8px;padding:11px 13px">
+          <button class="btn" id="addStore">追加する</button>
+        </div>
+        <p style="color:var(--muted);font-size:12.5px;margin:10px 0 0">
+          いま開いている店舗の設定と料金マスタを引き継いで作ります。
+        </p>
+      </div>
+    </section>
+
+    <!-- ---------- 料金マスタ ---------- -->
+    <section id="view-menu" class="hidden">
+      <div class="panel">
+        <h2>料金マスタ</h2>
+        <div class="scroll"><table class="list" id="menuTable"></table></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn primary" id="menuAdd">料金を追加</button>
+          <button class="btn ghost" id="menuSeed">ひな形を入れる</button>
+          <span style="color:var(--muted);font-size:12.5px">
+            料金を変えても、すでに打った伝票の金額は変わりません
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- スタッフ ---------- -->
+    <section id="view-staff" class="hidden">
+      <div class="panel">
+        <h2>スタッフ</h2>
+        <div class="scroll"><table class="list" id="staffTable"></table></div>
+        <div class="pay-check ng" style="margin-top:14px;font-size:13px">
+          スタッフの新規追加は、この画面からはできません。ログイン用のアカウントを先に作る必要があるためです。<br>
+          Supabase → Authentication → Users でアカウントを作ってから、SQL Editor で
+          <code>select * from app.link_staff('メール', '名前', 'staff');</code> を実行してください。
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ---------- 過去データ取込 ---------- -->
+    <section id="view-imp" class="hidden">
+      <div class="panel">
+        <h2>過去のデータを取り込む</h2>
+        <div class="box">
+          <b>いきなり書き換えません</b>
+          いったん「取り込み箱」に入れて、画面で中身を確かめてから反映します。
+          おかしな行があれば、その行だけ直すか、飛ばすことができます。
+        </div>
+
+        <div class="row" style="margin-bottom:10px">
+          <label class="field" style="margin:0;min-width:180px">
+            <span style="font-size:12px;color:var(--muted)">何を取り込むか</span>
+            <select id="impKind">
+              <option value="cast">在籍名簿（キャスト）</option>
+              <option value="customer">顧客台帳</option>
+              <option value="attendance">過去の出勤記録</option>
+              <option value="payroll">過去の給与（月別の履歴）</option>
+            </select>
+          </label>
+          <button class="btn ghost" id="impTemplate" style="margin-top:18px">CSVの雛形をもらう</button>
+        </div>
+
+        <div class="row" style="margin-bottom:6px">
+          <label class="btn primary" for="impCsv" style="margin-top:0">CSVを選ぶ</label>
+          <input id="impCsv" type="file" accept=".csv,text/csv" class="hidden">
+          <label class="btn ghost" for="impFile" style="margin-top:0">PDF・写真を預ける</label>
+          <input id="impFile" type="file" accept=".pdf,image/*" multiple class="hidden">
+        </div>
+        <p style="color:var(--muted);font-size:12.5px;margin:4px 0 0">
+          CSVは、1行目を見出しにしてください。雛形の見出しに合わせると、そのまま読み込めます。<br>
+          PDF・写真（手書きの名簿や給与台帳）は、こちらでお預かりして、1行ずつ起こしてからお返しします。
+        </p>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h2>取り込みの履歴</h2>
+        <div class="scroll"><table class="list" id="impTable"></table></div>
+        <div class="empty hidden" id="impEmpty">まだ取り込みはありません。</div>
+      </div>
+
+      <div class="panel hidden" id="impDetail" style="margin-top:14px">
+        <h2>中身の確認</h2>
+        <div id="impSummary"></div>
+        <div class="scroll" style="margin-top:10px"><table class="list" id="impRows"></table></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn ghost" id="impCheck">もう一度たしかめる</button>
+          <button class="btn primary" id="impApply">確認できたぶんを反映する</button>
+          <button class="btn ghost" id="impCancelBtn">この取り込みを取り消す</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- AI・送信 ---------- -->
+    <section id="view-ai" class="hidden">
+      <div class="panel" style="max-width:640px">
+        <h2>AIの下書き</h2>
+        <div class="box">
+          <b>AIは、文章を書くだけです</b>
+          金額や件数は、かならずこのツールの記録から取り出して渡します。
+          AIが数字をつくることはありません。出てきた文章は、確定する前に必ずご確認ください。
+        </div>
+        <label class="field"><span>使うAI</span>
+          <select id="ai_p">
+            <option value="off">使わない</option>
+            <option value="gemini">Gemini（速くて安い・ふだん使い向き）</option>
+            <option value="claude">Claude（日本語の文章が自然）</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </label>
+        <label class="field"><span>モデル名（空欄でおすすめの既定）</span>
+          <input id="ai_m" placeholder="gemini-2.0-flash など">
+          <span style="font-size:12px;color:var(--muted)">
+            モデル名は各社の都合で変わることがあります。動かなくなったら、ここを書き換えてください。
+          </span>
+        </label>
+        <label class="field"><span>書き方</span>
+          <select id="ai_t">
+            <option value="polite">ていねいに</option>
+            <option value="plain">短く、事実だけ</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="panel" style="max-width:640px;margin-top:14px">
+        <h2>メールで送る</h2>
+        <label class="field"><span>送り方</span>
+          <select id="ml_p">
+            <option value="off">使わない</option>
+            <option value="resend">Resend</option>
+            <option value="sendgrid">SendGrid</option>
+          </select>
+        </label>
+        <label class="field"><span>差出人のアドレス</span>
+          <input id="ml_f" type="email" placeholder="no-reply@example.co.jp">
+          <span style="font-size:12px;color:var(--muted)">
+            そのサービスで認証ずみのドメインのアドレスにしてください。
+          </span>
+        </label>
+        <label class="field"><span>差出人の表示名</span>
+          <input id="ml_n" placeholder="お店の名前">
+        </label>
+        <label class="field"><span>APIキー</span>
+          <input id="ml_k" type="password" placeholder="入れ直すときだけ入力してください">
+          <span style="font-size:12px;color:var(--muted)" id="ml_s"></span>
+        </label>
+      </div>
+
+      <div class="panel" style="max-width:640px;margin-top:14px">
+        <h2>LINEで送る</h2>
+        <label class="field"><span>LINE公式アカウントから送る</span>
+          <select id="ln_e">
+            <option value="0">使わない</option>
+            <option value="1">使う</option>
+          </select>
+        </label>
+        <label class="field"><span>チャネルアクセストークン</span>
+          <input id="ln_k" type="password" placeholder="入れ直すときだけ入力してください">
+          <span style="font-size:12px;color:var(--muted)" id="ln_s"></span>
+        </label>
+        <div class="box warn">
+          <b>入れた鍵は、画面から読み出せません</b>
+          鍵をしまう場所には、画面用の権限では1行も見えない設定をしています。
+          使えるのは送信のしくみだけです。控えは、お手元でも保管しておいてください。
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn primary" id="aiSave">保存する</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">送信箱</h2>
+          <span class="row" style="gap:6px">
+            <button class="btn ghost" id="obReload">表示</button>
+            <button class="btn ghost" id="obRetry">失敗ぶんを送り直す</button>
+            <button class="btn primary" id="obSend">今すぐ送る</button>
+          </span>
+        </div>
+        <div class="scroll" style="margin-top:12px"><table class="list" id="obTable"></table></div>
+        <div class="empty hidden" id="obEmpty">送信箱は空です。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+
+<script src="supabase.js"></script>
+<script src="config.js"></script>
+<script src="perm.js"></script>
+<script src="art.js"></script>
+<script src="photo.js"></script>
+<script src="ui.js"></script>
+<script src="pw.js"></script>
+<script src="admin.js"></script>
+<script src="menu.js"></script>
+</body>
+</html>
