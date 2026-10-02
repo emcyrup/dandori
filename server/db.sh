@@ -12,7 +12,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 [ -f .env ] || { echo "!! .env がありません。先に ./setup.sh"; exit 1; }
-set -a; . ./.env; set +a
+# .env を1行ずつそのまま読む（パスワードに $ や * があってもシェルに展開させない）
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in ''|'#'*) continue ;; esac
+  key="${line%%=*}"; val="${line#*=}"
+  [[ "$key" =~ ^[A-Z0-9_]+$ ]] && export "$key=$val"
+done < .env
 export PGHOST="$DB_HOST" PGPORT="${DB_PORT:-5432}" PGDATABASE="$DB_NAME" PGUSER="$DB_USER" PGPASSWORD="$DB_PASSWORD" PGSSLMODE="${DB_SSLMODE:-prefer}"
 export SQL_DIR="$(cd ../2_データベース && pwd)"
 STORE="$(echo "${STORE:-dandori}" | tr -cd 'A-Za-z0-9_-' | tr 'A-Z' 'a-z')"; STORE="${STORE:-dandori}"

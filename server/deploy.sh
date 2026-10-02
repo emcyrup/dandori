@@ -15,7 +15,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 [ -f .env ] || { echo "!! .env がありません。先に ./install.sh → ./setup.sh"; exit 1; }
 [ -x bin/postgrest ] && [ -x bin/auth ] && [ -x bin/deno ] && [ -d node_modules/pm2 ] || { echo "!! 部品が足りません。先に ./install.sh"; exit 1; }
-set -a; . ./.env; set +a
+# .env を1行ずつそのまま読む（パスワードに $ や * があってもシェルに展開させない）
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in ''|'#'*) continue ;; esac
+  key="${line%%=*}"; val="${line#*=}"
+  [[ "$key" =~ ^[A-Z0-9_]+$ ]] && export "$key=$val"
+done < .env
 PM2="./node_modules/.bin/pm2"
 MIG="../aws/migrator/migrate.sh"
 export PGHOST="$DB_HOST" PGPORT="${DB_PORT:-5432}" PGDATABASE="$DB_NAME" PGUSER="$DB_USER" PGPASSWORD="$DB_PASSWORD" PGSSLMODE="${DB_SSLMODE:-prefer}"
