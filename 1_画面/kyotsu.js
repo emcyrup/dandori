@@ -178,7 +178,7 @@ window.K = (function () {
           if ($("meName")) $("meName").textContent = S.me.name;
           $("login").classList.add("hidden");
           $("app").classList.remove("hidden");
-          document.body.className = "theme-" + (CFG.theme || "standard");
+          if (window.DANDORI_UI) window.DANDORI_UI.theme((CFG.theme || "standard")); else document.body.className = "theme-" + (CFG.theme || "standard");
           return loadStores();
         });
     }).catch(fail);

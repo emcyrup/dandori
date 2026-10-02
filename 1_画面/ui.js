@@ -119,6 +119,10 @@
 
   /* ---------------------------------------------------------- 当てる */
 
+  /*  前回当てた内容。同じなら何もしません（当て直すたびに描き直されて
+      ちらつくのを防ぎます。OS がダークモードのときに目立っていました） */
+  var LAST_SIG = null;
+
   function apply(p) {
     p = p || {};
     var b = document.body;
@@ -145,7 +149,11 @@
     /* フォント */
     if (FONTS.indexOf(p.font) >= 0) keep.push("font-" + p.font);
 
-    b.className = keep.join(" ");
+    var cls = keep.join(" ");
+    var sig = cls + "|" + JSON.stringify([p.text_size, p.bg_color, p.ink_color, p.bg_art, p.bg_image, p.bg_url]);
+    if (sig === LAST_SIG && b.className === cls) return;   /* 変わっていない */
+    LAST_SIG = sig;
+    if (b.className !== cls) b.className = cls;
 
     /* 文字の大きさ。100（標準）のときは、見せ方のままにします。 */
     var n = Number(p.text_size || 0);
@@ -194,6 +202,15 @@
         window.DANDORI_ART.set(p.bg_art || "off");
       }
     }
+  }
+
+  /*  各画面の JS が「この画面の既定の見た目」を当てるときの窓口。
+      ui.js が入っている画面では、その人の見た目の設定（無ければ標準）を
+      そのまま当て直します。以前は各画面が className を丸ごと書きかえ、
+      250ms 後にここが戻していたため、OS がダークモードのときに
+      暗い→明るいの往復でちらついていました。 */
+  function theme(name) {
+    apply(cached());
   }
 
   /* この端末の控え */
@@ -251,8 +268,15 @@
       inject();
       if (++n > 20) clearInterval(t);
     }, 250);
+    /*  class が書きかわった瞬間に当て直します（一瞬でも別の見た目が
+        出ないように）。自分の書きかえは apply が同じ内容と判定して止まります。 */
+    if (window.MutationObserver && document.body) {
+      new MutationObserver(function () {
+        if (!window.DANDORI_UI_HOLD) apply(cached());
+      }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    }
   });
 
   /* 設定ページから呼びます */
-  window.DANDORI_UI = { apply: apply, remember: remember, cached: cached };
+  window.DANDORI_UI = { apply: apply, remember: remember, cached: cached, theme: theme };
 })();

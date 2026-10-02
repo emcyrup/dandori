@@ -130,7 +130,7 @@
           $("meName").textContent = S.me.name + "（" + roleLabel(S.me.role) + "）";
           $("login").classList.add("hidden");
           $("app").classList.remove("hidden");
-          document.body.className = "theme-" + (CFG.theme || "dark");
+          if (window.DANDORI_UI) window.DANDORI_UI.theme((CFG.theme || "dark")); else document.body.className = "theme-" + (CFG.theme || "dark");
           return loadStores();
         });
     }).catch(fail);
@@ -193,7 +193,7 @@
     $("storeSel").value = id;
     try { localStorage.setItem(MISEKEY, id); } catch (e) {}
     if (CFG.theme === "dark" && S.store.ui_theme && S.store.ui_theme !== "dark") {
-      document.body.className = "theme-" + S.store.ui_theme;
+      if (window.DANDORI_UI) window.DANDORI_UI.theme(S.store.ui_theme); else document.body.className = "theme-" + S.store.ui_theme;
     }
     Promise.all([loadMasters()]).then(function () { switchView("hall"); });
   }

@@ -107,7 +107,7 @@
           $("meName").textContent = S.me.name;
           $("login").classList.add("hidden");
           $("app").classList.remove("hidden");
-          document.body.className = "theme-" + (CFG.theme || "dark");
+          if (window.DANDORI_UI) window.DANDORI_UI.theme((CFG.theme || "dark")); else document.body.className = "theme-" + (CFG.theme || "dark");
           return loadStores();
         });
     })["catch"](fail);
@@ -151,7 +151,7 @@
     S.store = S.stores.filter(function (s) { return s.id === id; })[0];
     $("storeSel").value = id;
     try { localStorage.setItem(MISEKEY, id); } catch (e) {}
-    if (S.store.ui_theme) document.body.className = "theme-" + S.store.ui_theme;
+    if (S.store.ui_theme) { if (window.DANDORI_UI) window.DANDORI_UI.theme(S.store.ui_theme); else document.body.className = "theme-" + S.store.ui_theme; }
     if (!$("dayDate").value) $("dayDate").value = todayBusinessDate();
     loadDay();
     loadReport();

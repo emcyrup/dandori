@@ -117,7 +117,7 @@
           $("meName").textContent = S.me.name;
           $("login").classList.add("hidden");
           $("app").classList.remove("hidden");
-          document.body.className = "theme-" + (CFG.theme || "dark");
+          if (window.DANDORI_UI) window.DANDORI_UI.theme((CFG.theme || "dark")); else document.body.className = "theme-" + (CFG.theme || "dark");
           return loadStores();
         });
     }).catch(fail);
