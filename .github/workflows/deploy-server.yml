@@ -1,0 +1,127 @@
+name: deploy-server
+
+# main に入ったら、本番サーバー（dandori.olivia.ai-labo.cloud）へ SSH で配備する。
+#   ・ソースを tar で送る（サーバーに git も Docker も要らない）
+#   ・server/install.sh → setup.sh → deploy.sh --auto（初回は --init、2回目からは入れ替え）
+#   ・2_データベース に変更があったときだけ、SQL を流す（db.sh schema）
+#
+# 必要な Secrets（リポジトリの Settings → Secrets and variables → Actions）
+#   SERVER_SSH_KEY   配布された秘密鍵（id_rsa_3piece4-prod.pem の中身をそのまま）
+#   DB_PASSWORD      ai_labo_dbuser のパスワード
+#   任意: SMTP_USER / SMTP_PASS / SMTP_ADMIN_EMAIL / ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / PIXABAY_API_KEY
+# 必要な Variables（同じ画面の Variables タブ。無ければ下の既定値）
+#   SERVER_HOST=15.168.86.215  SERVER_USER=3piece_prod4  SERVER_DIR=dandori  SITE_URL=https://dandori.olivia.ai-labo.cloud
+on:
+  push:
+    branches: [main]
+    paths: ["1_画面/**", "2_データベース/**", "3_サーバー/**", "server/**", "aws/migrator/**", ".github/workflows/deploy-server.yml"]
+  workflow_dispatch:
+    inputs:
+      run_sql:
+        description: "2_データベース の SQL を全部流す"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SERVER_HOST: ${{ vars.SERVER_HOST || '15.168.86.215' }}
+      SERVER_USER: ${{ vars.SERVER_USER || '3piece_prod4' }}
+      SERVER_DIR:  ${{ vars.SERVER_DIR  || 'dandori' }}
+      SITE_URL:    ${{ vars.SITE_URL    || 'https://dandori.olivia.ai-labo.cloud' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 文法チェック
+        run: |
+          for f in 1_画面/*.js; do node --check "$f"; done
+          for f in server/*.sh aws/*.sh; do bash -n "$f"; done
+          sh -n aws/migrator/migrate.sh
+          for f in server/gateway/*.mjs server/storage/*.mjs server/lib/*.mjs server/outbox/*.mjs; do node --check "$f"; done
+
+      - name: SQL を流すか決める
+        id: sql
+        run: |
+          run=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run="${{ inputs.run_sql }}"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && \
+               [ -n "$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 2_データベース aws/migrator/post.sql 2>/dev/null)" ]; then
+            run=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "SQL を流す: $run"
+
+      - name: SSH の準備
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          [ -n "$SSH_KEY" ] || { echo "!! Secrets の SERVER_SSH_KEY が空です"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p 22 -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config <<EOF
+          Host prod
+            HostName $SERVER_HOST
+            User $SERVER_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            ServerAliveInterval 30
+          EOF
+          ssh prod 'echo "接続OK: $(whoami)@$(hostname) node $(node -v 2>/dev/null)"'
+
+      - name: ソースを送る
+        run: |
+          git archive --format=tar HEAD 1_画面 2_データベース 3_サーバー aws server README_はじめにお読みください.txt | gzip > /tmp/src.tgz
+          ls -la /tmp/src.tgz
+          ssh prod "mkdir -p ~/$SERVER_DIR && cd ~/$SERVER_DIR && rm -rf 1_画面 2_データベース 3_サーバー aws && tar -xzf - " < /tmp/src.tgz
+          ssh prod "cd ~/$SERVER_DIR && chmod +x server/*.sh aws/*.sh aws/migrator/migrate.sh && ls"
+
+      - name: 設定（Secrets → .env）
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_ADMIN_EMAIL: ${{ secrets.SMTP_ADMIN_EMAIL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: |
+          [ -n "$DB_PASSWORD" ] || { echo "!! Secrets の DB_PASSWORD が空です"; exit 1; }
+          # 値はコマンドラインに出さず、標準入力で渡す
+          for k in SITE_URL DB_PASSWORD SMTP_USER SMTP_PASS SMTP_ADMIN_EMAIL ANTHROPIC_API_KEY GEMINI_API_KEY OPENAI_API_KEY PIXABAY_API_KEY; do
+            printf '%s' "${!k}" | ssh prod "cd ~/$SERVER_DIR/server && ./env-set.sh $k \"\$(cat)\""
+          done
+          ssh prod "cd ~/$SERVER_DIR/server && ./setup.sh"
+
+      - name: 部品を入れる（初回だけ時間がかかる）
+        run: ssh prod "cd ~/$SERVER_DIR/server && ./install.sh"
+
+      - name: 配備
+        run: ssh prod "cd ~/$SERVER_DIR/server && ./deploy.sh --auto"
+
+      - name: SQL（2_データベース に変更があったとき）
+        if: steps.sql.outputs.run == 'true'
+        run: ssh prod "cd ~/$SERVER_DIR/server && ./db.sh schema 2>&1 | grep -v NOTICE"
+
+      - name: 公開 URL の確認
+        run: |
+          code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' "$SITE_URL/login.html" || echo 000)
+          echo "$SITE_URL/login.html → $code"
+          [ "$code" = "200" ]

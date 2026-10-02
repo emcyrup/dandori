@@ -5,6 +5,7 @@
 #    ./deploy.sh --init       はじめての配備（DB の初期設定 → 起動 → テーブル作成 → 確認）
 #    ./deploy.sh              2回目から（git pull のあと。入れ替えて確認。DB はさわらない）
 #    ./deploy.sh --sql FILE   2_データベース の SQL を1つ流す（仕上げ post.sql まで自動）
+#    ./deploy.sh --auto       初回なら --init、2回目からは通常（GitHub Actions が使う）
 #    ./deploy.sh --status     動いているか見る
 #    ./deploy.sh --stop       全部止める
 #
@@ -72,7 +73,16 @@ reboot_hook() {  # サーバー再起動後に自分で立ち上がるように�
   fi
 }
 
-case "${1:-}" in
+MODE="${1:-}"
+if [ "$MODE" = "--auto" ]; then
+  if [ "$(psql -X -tAc "select to_regclass('public.tenant') is not null" 2>/dev/null)" = "t" ] && $PM2 describe gateway >/dev/null 2>&1; then
+    MODE=""; echo "== 2回目以降の配備として進めます"
+  else
+    MODE="--init"; echo "== 初回の配備として進めます"
+  fi
+fi
+
+case "$MODE" in
   --init)
     precheck_db
     echo "== DB の初期設定（役割・権限）"
