@@ -1,0 +1,11 @@
+{
+  "name": "dandori-server",
+  "private": true,
+  "description": "ナイトだんどり 本番サーバー（Docker なし・ホームディレクトリ内で完結）",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "pm2": "^7.0.0"
+  }
+}

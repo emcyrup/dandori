@@ -1,2 +1,5 @@
 .env
 data/
+logs/
+bin/
+node_modules/

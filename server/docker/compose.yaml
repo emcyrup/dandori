@@ -16,7 +16,7 @@ name: dandori
 
 services:
   gateway:
-    build: { context: .., dockerfile: server/gateway/Dockerfile }
+    build: { context: .., dockerfile: server/docker/Dockerfile }
     restart: unless-stopped
     ports: ["127.0.0.1:${LISTEN_PORT:-8032}:8000"]
     environment:

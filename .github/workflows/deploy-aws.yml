@@ -29,7 +29,8 @@ jobs:
       - name: スクリプトの文法
         run: |
           for f in aws/*.sh server/*.sh; do bash -n "$f"; done
-          sh -n server/gateway/40-dandori-config.sh
+          sh -n server/docker/40-dandori-config.sh
+          for f in server/gateway/*.mjs server/storage/*.mjs server/lib/*.mjs server/outbox/*.mjs; do node --check "$f"; done
           sh -n aws/migrator/migrate.sh
           node --check aws/tools/copy-storage.mjs
       - name: CloudFormation

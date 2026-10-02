@@ -148,16 +148,18 @@
 
 
 ------------------------------------------------------------------------------
-  AWS にまとめる場合
+  Supabase と Netlify を使わずに動かす場合
 ------------------------------------------------------------------------------
 
-  Supabase と Netlify のかわりに、すべてを AWS に置くこともできます。
-  データベースは RDS PostgreSQL、ログイン・ファイル・サーバー処理は
-  Supabase と同じ部品を AWS の上で動かすので、画面と SQL はそのまま使えます。
+  ・本番サーバー（dandori.olivia.ai-labo.cloud / sudo も Docker も無い共有サーバー）
+      server/本番サーバー_配備手順.md
+      ログイン・データの受け口は Supabase と同じ部品（GoTrue / PostgREST）の
+      単体バイナリ、ファイル置き場と入口は Node、3_サーバー は Deno で、
+      すべてホームディレクトリの中で PM2 が動かします。
+      先に server/依頼_サーバー管理者へ.md の3点をサーバー提供元に頼んでください。
+  ・Docker が使えるサーバー …… server/docker/compose.yaml
+  ・AWS のサービスで組む場合 …… aws/AWS_リリース手順.md
 
-  ・本番サーバー（dandori.olivia.ai-labo.cloud）… server/本番サーバー_配備手順.md
-    サーバーの nginx → 127.0.0.1:8032 → docker compose で一式を動かします。
-  ・AWS のサービスで組む場合 … aws/AWS_リリース手順.md
-  ・SQL Editor のかわりに  ./aws/run-migrator.sh sql "…"
-  ・SQL を流したあとは、かならず仕上げ（aws/migrator/post.sql）まで流します
-    （./aws/run-migrator.sh schema を使えば自動で流れます）
+  どの場合も、画面と SQL はそのままです。SQL Editor のかわりは ./db.sh sql "…"。
+  SQL を流したあとは、かならず仕上げ（aws/migrator/post.sql）まで流します
+  （db.sh schema / deploy.sh --sql を使えば自動で流れます）。

@@ -12,9 +12,13 @@
 \set ON_ERROR_STOP on
 
 -- 流しているユーザーと DB の名前（以下の :"owner" / :"dbname"）
-select current_user as owner, current_database() as dbname \gset
+select current_user as owner, current_database() as dbname,
+       (select rolcreaterole from pg_roles where rolname = current_user) as has_createrole \gset
 
 -- 1. 役割（Supabase と同じ名前）
+--    役割を作れる権限（CREATEROLE）が無いときは、この節は飛ばします。
+--    その場合は server/db/依頼_DB権限.sql を DB 管理者に流してもらってください。
+\if :has_createrole
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon')          then create role anon nologin noinherit; end if;
@@ -45,6 +49,9 @@ alter role supabase_storage_admin set search_path = storage;
 alter role authenticator set statement_timeout = '8s';
 alter role anon          set statement_timeout = '3s';
 alter role authenticated set statement_timeout = '8s';
+\else
+\echo '   役割を作る権限が無いので、役割の作成は飛ばします（管理者に作ってもらったものを使います）'
+\endif
 
 -- 2. 拡張機能（Supabase と同じく extensions スキーマに置く）
 create schema if not exists extensions;

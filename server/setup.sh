@@ -32,13 +32,13 @@ put SERVICE_ROLE_KEY "$(jwt service_role "$SECRET")"
 put AUTHENTICATOR_PASSWORD "$(rnd 16)"
 put AUTH_ADMIN_PASSWORD "$(rnd 16)"
 put STORAGE_ADMIN_PASSWORD "$(rnd 16)"
-mkdir -p data/storage
+mkdir -p data/storage data/deno logs
 
 missing=""
 for k in SITE_URL DB_HOST DB_NAME DB_USER DB_PASSWORD; do [ -n "$(get $k)" ] || missing="$missing $k"; done
 if [ -n "$missing" ]; then
   echo "!! .env にまだ入っていない項目があります:$missing"
-  echo "   vi server/.env で入れてから、./deploy.sh --init を実行してください。"
+  echo "   vi .env で入れてから、もう一度 ./setup.sh を実行してください。"
   exit 1
 fi
 echo "== 準備できました。つぎは ./deploy.sh --init"
