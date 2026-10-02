@@ -22,8 +22,10 @@ export PGHOST="$DB_HOST" PGPORT="${DB_PORT:-5432}" PGDATABASE="$DB_NAME" PGUSER=
 export SQL_DIR="$(cd ../2_データベース && pwd)"
 STORE="$(echo "${STORE:-dandori}" | tr -cd 'A-Za-z0-9_-' | tr 'A-Z' 'a-z')"; STORE="${STORE:-dandori}"
 [ -d "../stores/$STORE" ] && export STORE_SQL_DIR="$(cd "../stores/$STORE" && pwd)" || export STORE_SQL_DIR=""
-export AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SOURCE_DB_URL
+export AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SOURCE_DB_URL DB_MODE
 MIG="../aws/migrator/migrate.sh"
+# 運用スクリプトからの psql は「関数内」と同じ扱いにして RLS を素通りさせる（単一ロールモード用。役割ありでは無害）
+export PGAPPNAME=dandori_fn
 
 case "${1:-}" in
   psql) psql ;;
@@ -32,8 +34,15 @@ case "${1:-}" in
     URL="http://127.0.0.1:${LISTEN_PORT:-8032}"
     body="$(node -e 'console.log(JSON.stringify({email:process.argv[1],password:process.argv[2],email_confirm:true}))' "$2" "$3")"
     r="$(curl -s -X POST "$URL/auth/v1/admin/users" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "apikey: $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d "$body")"
-    echo "$r" | grep -q '"id"' || { echo "!! ログインを作れませんでした: $r"; exit 1; }
-    psql -X -c "select name, role from app.link_staff('$2', '$4', '${5:-owner}')"
+    if echo "$r" | grep -q '"id"'; then echo "   ログインを作りました"
+    elif echo "$r" | grep -q 'email_exists'; then echo "   ログインはすでにあります（スタッフの紐づけだけ行います）"
+    else echo "!! ログインを作れませんでした: $r"; exit 1; fi
+    # 紐づける法人：店舗名（STORE）と同じ名前の法人があればそれ、無ければ最初に作られた法人
+    psql -X -v ON_ERROR_STOP=1 -c "select s.name, s.role, t.name as tenant
+      from app.link_staff('$2', '$4', '${5:-owner}',
+             coalesce((select id from public.tenant where lower(name) = lower('$STORE') limit 1),
+                      (select id from public.tenant order by created_at limit 1))) s
+      join public.tenant t on t.id = s.tenant_id"
     ;;
   sql|demo|import|schema|bootstrap) bash "$MIG" "$@" ;;
   *) sed -n '4,11p' "$0"; exit 2 ;;

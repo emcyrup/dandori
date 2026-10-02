@@ -18,9 +18,12 @@ put() {  # 値が空のときだけ入れる
 rnd() { openssl rand -hex "$1"; }
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 jwt() {  # HS256 で署名（Supabase の anon / service_role キーと同じ形）
-  local head body sig
+  local head body sig extra=""
+  # service_role の鍵には "svc":true を足す。PostgREST は role の値を書き換えることがあるので、
+  # データベース側（app.is_service）はこの印でサーバー処理の鍵だと見分ける
+  [ "$1" = "service_role" ] && extra=',"svc":true'
   head=$(printf '%s' '{"alg":"HS256","typ":"JWT"}' | b64url)
-  body=$(printf '{"role":"%s","iss":"supabase","iat":1767225600,"exp":2082585600}' "$1" | b64url)
+  body=$(printf '{"role":"%s"%s,"iss":"supabase","iat":1767225600,"exp":2082585600}' "$1" "$extra" | b64url)
   sig=$(printf '%s' "$head.$body" | openssl dgst -sha256 -hmac "$2" -binary | b64url)
   printf '%s.%s.%s' "$head" "$body" "$sig"
 }
@@ -28,6 +31,10 @@ jwt() {  # HS256 で署名（Supabase の anon / service_role キーと同じ形
 put JWT_SECRET "$(rnd 24)"
 SECRET="$(get JWT_SECRET)"
 put ANON_KEY "$(jwt anon "$SECRET")"
+# 前の版で作った service_role の鍵（"svc" の印が無い）は作り直す
+if [ -n "$(get SERVICE_ROLE_KEY)" ] && ! printf '%s' "$(get SERVICE_ROLE_KEY)" | cut -d. -f2 | tr '_-' '/+' | { read -r b; printf '%s==' "$b" | base64 -d 2>/dev/null; } | grep -q '"svc"'; then
+  sed -i "s|^SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=|" .env; echo "   SERVICE_ROLE_KEY を新しい形で作り直します"
+fi
 put SERVICE_ROLE_KEY "$(jwt service_role "$SECRET")"
 put AUTHENTICATOR_PASSWORD "$(rnd 16)"
 put AUTH_ADMIN_PASSWORD "$(rnd 16)"

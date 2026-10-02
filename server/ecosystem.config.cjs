@@ -17,6 +17,9 @@ const need = (k) => { if (!env[k]) throw new Error(`.env の ${k} が空です�
 
 const DB = (user, pw) => `postgres://${user}:${encodeURIComponent(pw)}@${env.DB_HOST || "127.0.0.1"}:${env.DB_PORT || 5432}/${need("DB_NAME")}?sslmode=${env.DB_SSLMODE || "prefer"}`;
 const SITE_URL = need("SITE_URL");
+// 単一ロールモード：役割を作れないサーバーでは、DB のユーザー1つで全部を動かす
+const SINGLE = env.DB_MODE === "single";
+const dbUser = (role, pw) => SINGLE ? DB(need("DB_USER"), need("DB_PASSWORD")) : DB(role, pw);
 const JWT_SECRET = need("JWT_SECRET");
 // 店舗名（PM2 のプロセス名の頭に付く。同じサーバーに複数店舗を置いても混ざらない）
 const STORE = (env.STORE || "dandori").replace(/[^a-z0-9_-]/gi, "").toLowerCase() || "dandori";
@@ -43,8 +46,11 @@ const apps = [
   {
     ...common("rest"), script: path.join(HERE, "bin", "postgrest"), interpreter: "none",
     env: {
-      PGRST_DB_URI: DB("authenticator", need("AUTHENTICATOR_PASSWORD")),
-      PGRST_DB_SCHEMAS: "public", PGRST_DB_ANON_ROLE: "anon", PGRST_DB_USE_LEGACY_GUCS: "false",
+      PGRST_DB_URI: dbUser("authenticator", env.AUTHENTICATOR_PASSWORD || ""),
+      PGRST_DB_SCHEMAS: "public", PGRST_DB_USE_LEGACY_GUCS: "false",
+      // 単一ロール：匿名の役割 = DB ユーザー自身。鍵の中の role は見ない（存在しない役割に切り替えないため）
+      PGRST_DB_ANON_ROLE: SINGLE ? need("DB_USER") : "anon",
+      ...(SINGLE ? { PGRST_JWT_ROLE_CLAIM_KEY: ".dandori_single_role_unused" } : {}),
       PGRST_DB_POOL: "10", PGRST_SERVER_HOST: "127.0.0.1", PGRST_SERVER_PORT: PORTS.rest,
       PGRST_JWT_SECRET: JWT_SECRET, PGRST_LOG_LEVEL: "error",
     },
@@ -54,7 +60,8 @@ const apps = [
     env: {
       GOTRUE_API_HOST: "127.0.0.1", GOTRUE_API_PORT: PORTS.auth,
       API_EXTERNAL_URL: `${SITE_URL}/auth/v1`,
-      GOTRUE_DB_DRIVER: "postgres", GOTRUE_DB_DATABASE_URL: DB("supabase_auth_admin", need("AUTH_ADMIN_PASSWORD")),
+      GOTRUE_DB_DRIVER: "postgres",
+      GOTRUE_DB_DATABASE_URL: dbUser("supabase_auth_admin", env.AUTH_ADMIN_PASSWORD || "") + (SINGLE ? "&search_path=auth" : ""),
       GOTRUE_DB_MIGRATIONS_PATH: path.join(HERE, "bin", "migrations"),
       GOTRUE_SITE_URL: SITE_URL, GOTRUE_URI_ALLOW_LIST: `${SITE_URL}/**`,
       GOTRUE_DISABLE_SIGNUP: "true", GOTRUE_EXTERNAL_EMAIL_ENABLED: "true", GOTRUE_MAILER_AUTOCONFIRM: "false",
@@ -72,7 +79,8 @@ const apps = [
     ...common("storage"), script: path.join(HERE, "storage", "server.mjs"),
     env: {
       STORAGE_PORT: PORTS.storage, STORAGE_DIR: path.join(HERE, "data", "storage"),
-      DATABASE_URL: DB("supabase_storage_admin", need("STORAGE_ADMIN_PASSWORD")), JWT_SECRET,
+      DATABASE_URL: dbUser("supabase_storage_admin", env.STORAGE_ADMIN_PASSWORD || ""), JWT_SECRET,
+      DB_SINGLE_ROLE: SINGLE ? "1" : "",
     },
   },
   ...functions.map((name, i) => ({

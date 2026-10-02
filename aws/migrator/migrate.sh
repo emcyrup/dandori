@@ -19,6 +19,18 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 export PGDATABASE="${PGDATABASE:-postgres}"
 export PGSSLMODE="${PGSSLMODE:-require}"
 PSQL="psql -X -v ON_ERROR_STOP=1 --no-psqlrc"
+export PGAPPNAME="${PGAPPNAME:-dandori_fn}"   # SQL の中のデータ投入が RLS で止まらないように（単一ロールモード用）
+DB_MODE="${DB_MODE:-roles}"               # roles（Supabase と同じ役割あり）/ single（DB ユーザー1つだけ）
+
+# 単一ロールモードでは、SQL の中の役割名（anon / authenticated / service_role）を public に読み替える。
+# 役割名は grant / revoke / create policy にしか出てこないことを確認済み（データとしては使っていない）。
+run_sql_file() {
+  if [ "$DB_MODE" = "single" ]; then
+    sed -E 's/\b(anon|authenticated|service_role)\b/public/g; s/\bpublic(, *public)+/public/g' "$1" | $PSQL -q -f -
+  else
+    $PSQL -q -f "$1"
+  fi
+}
 
 wait_for() {  # GoTrue / Storage が自分の表を作り終えるのを待つ
   i=0
@@ -33,15 +45,23 @@ run_files() {
   wait_for storage.buckets
   for f in "$@"; do
     echo "== $(basename "$f")"
-    $PSQL -q -f "$f"
+    run_sql_file "$f"
   done
-  echo "== 仕上げ (post.sql)"
-  $PSQL -q -f "$HERE/post.sql"
+  if [ "$DB_MODE" = "single" ]; then
+    echo "== 仕上げ (post-single.sql)"
+    $PSQL -q -f "$HERE/post-single.sql"
+  else
+    echo "== 仕上げ (post.sql)"
+    $PSQL -q -f "$HERE/post.sql"
+  fi
 }
 
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   bootstrap)
+    if [ "$DB_MODE" = "single" ]; then
+      $PSQL -q -f "$HERE/bootstrap-single.sql"; echo "== bootstrap（単一ロール）完了"; exit 0
+    fi
     $PSQL -q \
       -v authenticator_pw="$AUTHENTICATOR_PASSWORD" \
       -v auth_admin_pw="$AUTH_ADMIN_PASSWORD" \
@@ -101,7 +121,7 @@ truncate table auth.identities, auth.users cascade;
 \i $DUMP/app.sql
 commit;
 SQL
-    $PSQL -q -f "$HERE/post.sql"
+    if [ "$DB_MODE" = "single" ]; then $PSQL -q -f "$HERE/post-single.sql"; else $PSQL -q -f "$HERE/post.sql"; fi
     echo "== 件数の確認"
     $PSQL -c "select (select count(*) from auth.users) as users, (select count(*) from public.tenant) as tenants, (select count(*) from public.store) as stores"
     echo "== import 完了（ファイルは aws/tools/copy-storage.mjs で別に移します）"

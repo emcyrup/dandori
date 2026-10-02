@@ -23,11 +23,13 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < .env
 PM2="./node_modules/.bin/pm2"
 MIG="../aws/migrator/migrate.sh"
+# 運用スクリプトからの psql は「関数内」と同じ扱いにして RLS を素通りさせる（単一ロールモード用。役割ありでは無害）
+export PGAPPNAME=dandori_fn
 export PGHOST="$DB_HOST" PGPORT="${DB_PORT:-5432}" PGDATABASE="$DB_NAME" PGUSER="$DB_USER" PGPASSWORD="$DB_PASSWORD" PGSSLMODE="${DB_SSLMODE:-prefer}"
 export SQL_DIR="$(cd ../2_データベース && pwd)"
 STORE="$(echo "${STORE:-dandori}" | tr -cd 'A-Za-z0-9_-' | tr 'A-Z' 'a-z')"; STORE="${STORE:-dandori}"
 [ -d "../stores/$STORE" ] && export STORE_SQL_DIR="$(cd "../stores/$STORE" && pwd)" || export STORE_SQL_DIR=""
-export AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SOURCE_DB_URL
+export AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SOURCE_DB_URL DB_MODE
 URL="http://127.0.0.1:${LISTEN_PORT:-8032}"
 
 precheck_db() {
@@ -42,7 +44,12 @@ select
 SQL
   IFS='|' read -r can_create roles_ok is_owner has_pg ver_ok < /tmp/dandori-precheck.$$; rm -f /tmp/dandori-precheck.$$
   printf '   役割を作れる: %s / 役割がそろっている: %s / DB の持ち主: %s / postgres 役割: %s / PostgreSQL 15 以上: %s\n' "$can_create" "$roles_ok" "$is_owner" "$has_pg" "$ver_ok"
-  if [ "$can_create" != "t" ] && [ "$roles_ok" != "t" ]; then
+  if [ "${DB_MODE:-}" = "single" ]; then
+    echo "   単一ロールモード（DB ユーザー1つで動かす）"
+  elif [ "$can_create" != "t" ] && [ "$roles_ok" != "t" ] && [ -z "${DB_ADMIN_PASSWORD:-}" ]; then
+    echo "   役割を作れないので、単一ロールモード（DB ユーザー1つで動かす）にします"
+    ./env-set.sh DB_MODE single; export DB_MODE=single
+  elif [ "$can_create" != "t" ] && [ "$roles_ok" != "t" ]; then
     if [ -n "${DB_ADMIN_PASSWORD:-}" ]; then
       echo "== 管理者（${DB_ADMIN_USER:-postgres}）で役割を作ります"
       PGUSER="${DB_ADMIN_USER:-postgres}" PGPASSWORD="$DB_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 \
@@ -111,8 +118,8 @@ case "$MODE" in
     precheck_db
     echo "== DB の初期設定（役割・権限）"
     bash "$MIG" bootstrap
-    echo "== 内部の役割でログインできるか"
-    for pair in "authenticator:$AUTHENTICATOR_PASSWORD" "supabase_auth_admin:$AUTH_ADMIN_PASSWORD" "supabase_storage_admin:$STORAGE_ADMIN_PASSWORD"; do
+    [ "${DB_MODE:-}" = "single" ] || echo "== 内部の役割でログインできるか"
+    [ "${DB_MODE:-}" = "single" ] || for pair in "authenticator:$AUTHENTICATOR_PASSWORD" "supabase_auth_admin:$AUTH_ADMIN_PASSWORD" "supabase_storage_admin:$STORAGE_ADMIN_PASSWORD"; do
       u="${pair%%:*}"; pw="${pair#*:}"
       if ! PGUSER="$u" PGPASSWORD="$pw" psql -X -tAc "select 1" >/dev/null 2>&1; then
         echo "!! $u で DB にログインできません。"
@@ -124,7 +131,11 @@ case "$MODE" in
     done
     echo "   OK"
     echo "== ファイル置き場の表"
-    PGUSER=supabase_storage_admin PGPASSWORD="$STORAGE_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 -f db/storage-schema.sql
+    if [ "${DB_MODE:-}" = "single" ]; then
+      sed -E 's/\b(anon|authenticated|service_role)\b/public/g; s/\bpublic(, *public)+/public/g' db/storage-schema.sql | psql -X -q -v ON_ERROR_STOP=1 -f -
+    else
+      PGUSER=supabase_storage_admin PGPASSWORD="$STORAGE_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 -f db/storage-schema.sql
+    fi
     echo "== ログイン（GoTrue）を先に起動して、テーブルを作らせる"
     $PM2 start ecosystem.config.cjs --only "$STORE-auth" >/dev/null
     wait_http "http://127.0.0.1:${AUTH_PORT:-$(( ${LISTEN_PORT:-8032} + 30001 ))}/health" "ログイン"

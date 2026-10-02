@@ -30,7 +30,9 @@ const LIMIT = Number(env.FILE_SIZE_LIMIT || 50 * 1024 * 1024);
 const ROLES = new Set(["anon", "authenticated", "service_role"]);
 if (!JWT_SECRET || !env.DATABASE_URL) { console.error("JWT_SECRET / DATABASE_URL が空です"); process.exit(1); }
 
-const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 5 });
+// この部品自身の問い合わせ（バケットの有無・署名リンクの確認）は「関数内」と同じ扱いで RLS を素通りする。
+// ログインした方の代わりに行う読み書き（asUser）は、取引の中で名前を変えて RLS を効かせる。
+const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 5, application_name: "dandori_fn" });
 fs.mkdirSync(ROOT, { recursive: true });
 
 class HttpError extends Error { constructor(status, error, message) { super(message); this.status = status; this.error = error; } }
@@ -83,8 +85,10 @@ async function asUser(claims, fn) {
   const c = await pool.connect();
   try {
     await c.query("begin");
+    await c.query("set local application_name = 'dandori_storage_user'");
     const role = ROLES.has(claims && claims.role) ? claims.role : "anon";
-    await c.query(`set local role ${role}`);
+    // 単一ロールモードでは役割が無いので切り替えない（RLS は持ち主にも効く設定にしてある）
+    if (!env.DB_SINGLE_ROLE) await c.query(`set local role ${role}`);
     await c.query("select set_config('request.jwt.claims', $1, true), set_config('request.jwt.claim.sub', $2, true), set_config('request.jwt.claim.role', $3, true)",
       [JSON.stringify(claims || {}), (claims && claims.sub) || "", role]);
     const r = await fn(c);
