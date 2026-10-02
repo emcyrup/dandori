@@ -50,19 +50,19 @@ SQL
     echo "   役割を作れないので、単一ロールモード（DB ユーザー1つで動かす）にします"
     ./env-set.sh DB_MODE single; export DB_MODE=single
   elif [ "$can_create" != "t" ] && [ "$roles_ok" != "t" ]; then
-    if [ -n "${DB_ADMIN_PASSWORD:-}" ]; then
+    # 管理者のパスワードがあっても、その管理者に役割を作る権限が無ければ単一ロールモードにする
+    admin_ok="$(PGUSER="${DB_ADMIN_USER:-postgres}" PGPASSWORD="$DB_ADMIN_PASSWORD" psql -X -tAc \
+      "select rolsuper or rolcreaterole from pg_roles where rolname = current_user" 2>/dev/null || echo f)"
+    if [ "$admin_ok" != "t" ]; then
+      echo "   管理者（${DB_ADMIN_USER:-postgres}）でも役割を作れないので、単一ロールモード（DB ユーザー1つで動かす）にします"
+      ./env-set.sh DB_MODE single; export DB_MODE=single
+    else
       echo "== 管理者（${DB_ADMIN_USER:-postgres}）で役割を作ります"
       PGUSER="${DB_ADMIN_USER:-postgres}" PGPASSWORD="$DB_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 \
         -v app_user="$DB_USER" -v authenticator_pw="$AUTHENTICATOR_PASSWORD" \
         -v auth_admin_pw="$AUTH_ADMIN_PASSWORD" -v storage_admin_pw="$STORAGE_ADMIN_PASSWORD" \
         -f db/admin-roles.sql
       echo "   作りました"
-    else
-      echo "!! 役割（anon / authenticated など）が無く、作る権限もありません。"
-      echo "   次のどちらかです："
-      echo "   ・.env（GitHub なら Secrets）に DB_ADMIN_PASSWORD（postgres のパスワード）を入れて、もう一度"
-      echo "   ・db/依頼_DB権限.sql を DB 管理者に渡して、役割を作ってもらう"
-      exit 1
     fi
   elif [ "$can_create" != "t" ] && [ -n "${DB_ADMIN_PASSWORD:-}" ]; then
     # 役割はあるが、この店舗のユーザーへの権限付与がまだかもしれないので、管理者で確かめておく
