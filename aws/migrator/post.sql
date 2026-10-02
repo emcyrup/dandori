@@ -7,6 +7,7 @@
 --  （service_role の鍵はサーバー側だけにあり、ブラウザには出ません）
 -- ============================================================================
 \set ON_ERROR_STOP on
+select current_user as owner \gset
 
 do $$
 declare r record;
@@ -34,7 +35,7 @@ grant execute on all functions in schema public, app to service_role;
 grant select, insert, update, delete on all tables in schema app to service_role;
 
 -- app の関数（security definer）が auth.users を見られるように
-grant select on auth.users to postgres;
+grant select on auth.users to :"owner";
 
 -- PostgREST に表と関数の一覧を読み直してもらう
 notify pgrst, 'reload schema';

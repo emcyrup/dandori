@@ -28,7 +28,8 @@ jobs:
         run: for f in 1_画面/*.js; do node --check "$f"; done
       - name: スクリプトの文法
         run: |
-          for f in aws/*.sh; do bash -n "$f"; done
+          for f in aws/*.sh server/*.sh; do bash -n "$f"; done
+          sh -n server/gateway/40-dandori-config.sh
           sh -n aws/migrator/migrate.sh
           node --check aws/tools/copy-storage.mjs
       - name: CloudFormation

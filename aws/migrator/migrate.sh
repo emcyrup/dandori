@@ -68,7 +68,15 @@ case "$cmd" in
       -t auth.users -t auth.identities -f $DUMP/auth.sql
     pg_dump "$SOURCE_DB_URL" --data-only --no-owner --no-privileges \
       -n public -n app -f $DUMP/app.sql
-    echo "== RDS へ書き込み（いま入っているデモデータは消します）"
+    # 書き込み先が PostgreSQL 16 以下でも通るように（17 からの設定項目を外す）
+    sed -i '/^SET transaction_timeout/d' $DUMP/auth.sql $DUMP/app.sql
+    if ! $PSQL -qc "set session_replication_role = replica" >/dev/null 2>&1; then
+      echo "!! $PGUSER に session_replication_role を変える権限がありません。"
+      echo "   superuser で次を1回流してください（PostgreSQL 15 以上）:"
+      echo "   grant set on parameter session_replication_role to $PGUSER;"
+      exit 1
+    fi
+    echo "== 書き込み（いま入っているデモデータは消します）"
     $PSQL -q <<SQL
 begin;
 set session_replication_role = replica;

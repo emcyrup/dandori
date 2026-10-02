@@ -8,9 +8,29 @@
 //
 //  Supabase 公式のセルフホスト版 main/index.ts を、だんどり用に小さくしたものです。
 // ============================================================================
-import * as jose from "jsr:@panva/jose@6";
+// 外のライブラリは使わない（起動時にネットから取りに行かずに済むように）
+const KEY = crypto.subtle.importKey(
+  "raw", new TextEncoder().encode(Deno.env.get("JWT_SECRET") ?? ""),
+  { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+);
 
-const JWT_SECRET = new TextEncoder().encode(Deno.env.get("JWT_SECRET") ?? "");
+function b64url(s: string): Uint8Array {
+  const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
+  return Uint8Array.from(b, (c) => c.charCodeAt(0));
+}
+
+// HS256 の署名と期限を確かめる（Supabase の anon / service_role / ログインの鍵）
+async function verifyHs256(token: string): Promise<boolean> {
+  const p = token.split(".");
+  if (p.length !== 3) return false;
+  const head = JSON.parse(new TextDecoder().decode(b64url(p[0])));
+  if (head.alg !== "HS256") return false;
+  const ok = await crypto.subtle.verify("HMAC", await KEY, b64url(p[2]), new TextEncoder().encode(`${p[0]}.${p[1]}`));
+  if (!ok) return false;
+  const body = JSON.parse(new TextDecoder().decode(b64url(p[1])));
+  return typeof body.exp !== "number" || body.exp > Date.now() / 1000;
+}
+
 const NO_VERIFY = new Set(
   (Deno.env.get("NO_VERIFY_JWT") ?? "line-webhook").split(",").map((s) => s.trim()).filter(Boolean),
 );
@@ -26,11 +46,9 @@ async function checkJwt(req: Request): Promise<Response | null> {
     return fail(401, "UNAUTHORIZED_NO_AUTH_HEADER", "Missing authorization header");
   }
   try {
-    await jose.jwtVerify(parts[1], JWT_SECRET, { algorithms: ["HS256"] });
-    return null;
-  } catch (_e) {
-    return fail(401, "UNAUTHORIZED_LEGACY_JWT", "Invalid JWT");
-  }
+    if (await verifyHs256(parts[1])) return null;
+  } catch (_e) { /* 形がおかしい鍵 */ }
+  return fail(401, "UNAUTHORIZED_LEGACY_JWT", "Invalid JWT");
 }
 
 Deno.serve(async (req: Request) => {

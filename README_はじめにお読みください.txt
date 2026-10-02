@@ -155,7 +155,9 @@
   データベースは RDS PostgreSQL、ログイン・ファイル・サーバー処理は
   Supabase と同じ部品を AWS の上で動かすので、画面と SQL はそのまま使えます。
 
-  手順は aws/AWS_リリース手順.md を見てください。
+  ・本番サーバー（dandori.olivia.ai-labo.cloud）… server/本番サーバー_配備手順.md
+    サーバーの nginx → 127.0.0.1:8032 → docker compose で一式を動かします。
+  ・AWS のサービスで組む場合 … aws/AWS_リリース手順.md
   ・SQL Editor のかわりに  ./aws/run-migrator.sh sql "…"
   ・SQL を流したあとは、かならず仕上げ（aws/migrator/post.sql）まで流します
     （./aws/run-migrator.sh schema を使えば自動で流れます）

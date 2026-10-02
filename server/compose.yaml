@@ -1,0 +1,146 @@
+# ============================================================================
+#  ナイトだんどり 本番サーバー（docker compose）
+#
+#   サーバーの nginx（https://dandori.olivia.ai-labo.cloud）
+#        └→ 127.0.0.1:8032 → gateway（画面 + API の入口）
+#                               ├ rest       データの受け口（PostgREST）
+#                               ├ auth       ログイン（GoTrue）
+#                               ├ storage    ファイル（./data/storage に保存）
+#                               └ functions  3_サーバー をそのまま実行
+#                                    ↓
+#                               PostgreSQL（DB_HOST の dandoriolivia）
+#
+#  設定はすべて server/.env（setup.sh が作ります）。
+# ============================================================================
+name: dandori
+
+services:
+  gateway:
+    build: { context: .., dockerfile: server/gateway/Dockerfile }
+    restart: unless-stopped
+    ports: ["127.0.0.1:${LISTEN_PORT:-8032}:8000"]
+    environment:
+      SITE_URL: ${SITE_URL}
+      ANON_KEY: ${ANON_KEY}
+    depends_on: [rest, auth, storage, functions]
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v14.17
+    restart: unless-stopped
+    command: [postgrest]
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_SERVER_PORT: "3000"
+      PGRST_DB_POOL: "10"
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.196.0
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: ${SITE_URL}/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${AUTH_ADMIN_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL}/**
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT}
+      GOTRUE_SMTP_USER: ${SMTP_USER}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.74.0
+    restart: unless-stopped
+    volumes: ["./data/storage:/var/lib/storage"]
+    environment:
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: local
+      GLOBAL_S3_BUCKET: stub
+      FILE_SIZE_LIMIT: "52428800"
+      UPLOAD_FILE_SIZE_LIMIT: "52428800"
+      POSTGREST_URL: http://rest:3000
+      DB_INSTALL_ROLES: "false"
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      STORAGE_PUBLIC_URL: ${SITE_URL}
+      DATABASE_URL: postgres://supabase_storage_admin:${STORAGE_ADMIN_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  functions:
+    build: { context: .., dockerfile: aws/functions/Dockerfile }
+    restart: unless-stopped
+    environment:
+      SUPABASE_URL: http://gateway:8000
+      NO_VERIFY_JWT: line-webhook
+      JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PIXABAY_API_KEY: ${PIXABAY_API_KEY:-}
+
+  # 送信箱（LINE・メール）を5分ごとに送る（Supabase 版の pg_cron の代わり）
+  # .env の COMPOSE_PROFILES=outbox で動きます
+  outbox:
+    image: public.ecr.aws/docker/library/alpine:3.20
+    profiles: [outbox]
+    restart: unless-stopped
+    environment:
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          sleep 300
+          wget -q -O - --header "Authorization: Bearer $$SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" --post-data "{}" \
+            http://gateway:8000/functions/v1/send-outbox || true
+          echo
+        done
+    depends_on: [gateway]
+
+  # データベース係（ふだんは動かない。docker compose run --rm migrator <コマンド>）
+  migrator:
+    build: { context: .., dockerfile: aws/migrator/Dockerfile }
+    profiles: [tools]
+    environment:
+      PGHOST: ${DB_HOST}
+      PGPORT: ${DB_PORT}
+      PGDATABASE: ${DB_NAME}
+      PGUSER: ${DB_USER}
+      PGPASSWORD: ${DB_PASSWORD}
+      PGSSLMODE: ${DB_SSLMODE}
+      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD}
+      STORAGE_ADMIN_PASSWORD: ${STORAGE_ADMIN_PASSWORD}
+      SOURCE_DB_URL: ${SOURCE_DB_URL:-}
+    extra_hosts: ["host.docker.internal:host-gateway"]
