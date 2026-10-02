@@ -284,8 +284,8 @@
         '<input id="m_guest" placeholder="山本様"></div>' +
       '<div class="field"><label for="m_head">人数</label>' +
         '<input id="m_head" type="number" min="1" value="1" inputmode="numeric"></div>' +
-      '<div class="field"><label for="m_cast">担当キャスト</label><select id="m_cast">' +
-        '<option value="">（なし）</option>' +
+      '<div class="field"><label for="m_cast">ついたキャスト（あとから伝票で何人でも足せます）</label><select id="m_cast">' +
+        '<option value="">（まだ決まっていない）</option>' +
         S.casts.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + "</option>"; }).join("") +
         "</select></div>" +
       '<div class="row" style="margin-top:16px">' +
@@ -348,12 +348,12 @@
     var cust = S.customers.filter(function (c) { return c.id === v.customer_id; })[0];
     $("ticketTitle").textContent = (v.table_no || "卓") + "　" +
       (cust ? cust.name : (v.guest_name || "お名前なし"));
+    var seatedNames = (S.seated || []).map(castName).filter(Boolean);
     $("ticketMeta").textContent = v.head_count + "名　" +
-      (castName(v.main_cast_id) ? "担当 " + castName(v.main_cast_id) : "フリー（担当なし）") + "　" +
+      (seatedNames.length ? "ついている：" + seatedNames.join("・") : "まだ誰もついていません") + "　" +
       new Date(v.entered_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) + " 入店";
 
     // キャスト選択
-    $("castBtn").textContent = v.main_cast_id ? "担当を変える" : "担当を決める";
     renderSeated();
 
     // メニュー
@@ -398,40 +398,6 @@
 
     $("payBtn").disabled = !S.items.length;
   }
-
-  /* -------------------------------------------------------------- 卓の担当（フリーの割り振り） */
-
-  $("castBtn").addEventListener("click", function () {
-    var v = S.visit;
-    modal(
-      "<h2>" + esc(v.table_no || "卓") + "　担当キャスト</h2>" +
-      "<p style='color:var(--muted);font-size:12.5px;margin:-8px 0 14px'>" +
-        "フリーのお客様についたキャストを選びます。この卓で付くドリンクなどのバックと個人売上が、そのキャストに付きます" +
-        "（指名料は付きません）。</p>" +
-      '<div class="field"><label for="sc_cast">担当</label><select id="sc_cast">' +
-        '<option value="">（フリー・担当なし）</option>' +
-        S.casts.map(function (c) {
-          return '<option value="' + c.id + '"' + (c.id === v.main_cast_id ? " selected" : "") + ">" + esc(c.name) + "</option>";
-        }).join("") + "</select></div>" +
-      '<div class="row" style="margin-top:16px">' +
-        '<button class="btn ghost" id="m_cancel">やめる</button>' +
-        '<button class="btn primary" id="m_ok" style="flex:1">決める</button></div>',
-      function (root) {
-        root.querySelector("#m_cancel").addEventListener("click", closeModal);
-        root.querySelector("#m_ok").addEventListener("click", function () {
-          var btn = this; btn.disabled = true;
-          sb.rpc("night_set_cast", { p_visit: v.id, p_cast: root.querySelector("#sc_cast").value || null })
-            .then(function (q) {
-              btn.disabled = false;
-              if (q.error) { fail(q.error); return; }
-              closeModal();
-              toast(q.data && q.data.main_cast_id ? castName(q.data.main_cast_id) + " を担当にしました" : "フリーに戻しました", "ok");
-              loadTicket(v.id);
-            });
-        });
-      }
-    );
-  });
 
   function renderSeated() {
     var seated = S.seated || [];

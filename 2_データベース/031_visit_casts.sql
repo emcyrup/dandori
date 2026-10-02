@@ -165,3 +165,22 @@ begin
   return it;
 end;
 $$;
+
+
+-- ---- 卓を開くときに選んだキャストも、「ついているキャスト」に入れておく
+create or replace function app.trg_visit_seat_main_cast()
+returns trigger language plpgsql security definer set search_path = public, app
+as $$
+begin
+  if new.main_cast_id is not null and new.status = 'open' then
+    insert into public.night_visit_cast(tenant_id, store_id, visit_id, cast_id)
+    values (new.tenant_id, new.store_id, new.id, new.main_cast_id)
+    on conflict (visit_id, cast_id) do nothing;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_visit_seat_main_cast on public.night_visit;
+create trigger trg_visit_seat_main_cast
+  after insert on public.night_visit
+  for each row execute function app.trg_visit_seat_main_cast();
