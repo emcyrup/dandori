@@ -425,13 +425,15 @@
             (r.confirmed ? ' <span class="tag settled">確定済</span>' : "") +
             (r.below_min_wage ? ' <span class="tag open">最低賃金未満</span>' : "") +
             "<br><span style='color:var(--muted);font-size:11.5px'>本指名 " + r.nominations +
-            "／同伴 " + r.douhans + "／" + r.work_days + "日</span></td>" +
+            "／同伴 " + r.douhans + "／" + r.work_days + "日" +
+            (r.achieved_pct != null && r.work_minutes > 0 ? "／達成率 " + r.achieved_pct + "%" : "") + "</span></td>" +
           "<td class='num'>" + hm(r.work_minutes) + "</td>" +
           "<td class='num'>" + yen(r.hourly_applied) +
             (r.hourly_applied !== r.hourly_base ?
               "<br><span style='color:var(--gold);font-size:11px'>スライド適用</span>" : "") + "</td>" +
           "<td class='num'>" + yen(r.wage_amount) + "</td>" +
-          "<td class='num'>" + yen(r.back_amount) + "</td>" +
+          "<td class='num'>" + yen(r.back_amount) +
+            (r.back_bonus > 0 ? "<br><span style='color:var(--gold);font-size:11px'>うち達成分 " + yen(r.back_bonus) + "</span>" : "") + "</td>" +
           "<td class='num'>" + yen(r.allowance) + "</td>" +
           "<td class='num'>" + (r.deduction ? "-" + yen(r.deduction) : "—") + "</td>" +
           "<td class='num'>" + (r.advance ? "-" + yen(r.advance) : "—") + "</td>" +
@@ -482,9 +484,11 @@
           (r.hourly_applied !== r.hourly_base ? "（基本 " + yen(r.hourly_base) + "）" : "") + "</span></div>" +
         "<div><span>本指名／同伴／ドリンク</span><span class='mono'>" +
           r.nominations + " / " + r.douhans + " / " + r.drinks + "</span></div>" +
+        (r.achieved_pct != null && r.work_minutes > 0 ?
+          "<div><span>個人売上／達成率</span><span class='mono'>" + yen(r.sales) + "／" + r.achieved_pct + "%</span></div>" : "") +
         "<div style='border-top:1px solid var(--line);margin-top:8px;padding-top:8px'></div>" +
         line("時給ぶん", r.wage_amount) +
-        line("バック", r.back_amount) +
+        line("バック" + (r.back_bonus > 0 ? "（うち達成分 " + yen(r.back_bonus) + "）" : ""), r.back_amount) +
         line("手当", r.allowance) +
         line("控除", r.deduction, true) +
         line("日払い済み", r.advance, true) +
@@ -508,8 +512,11 @@
       "<th>明細の受け取り方</th><th>状態</th><th></th></tr>" +
       S.casts.map(function (c) {
         var rules = (c.wage_rules || []).map(function (r) {
-          return (r.type === "nomination" ? "本指名" + r.from + "本以上" : "売上" + Number(r.from).toLocaleString() + "円以上")
-            + " → " + yen(r.wage);
+          var cond = r.type === "nomination" ? "本指名" + r.from + "本以上"
+                   : r.type === "ratio" ? "達成率" + r.from + "%以上"
+                   : "売上" + Number(r.from).toLocaleString() + "円以上";
+          return cond + " → " + yen(r.wage) +
+            (r.back_rate ? "・バック" + r.back_rate + "%〜" : "");
         });
         return "<tr><td>" + esc(c.name) + "</td>" +
           "<td class='num'>" + yen(c.hourly_wage) + "</td>" +
@@ -589,6 +596,18 @@
     var c = id ? S.casts.filter(function (x) { return x.id === id; })[0] : null;
     var r1 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "nomination"; })[0]) || {};
     var r2 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "sales"; })[0]) || {};
+    var r3 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "ratio"; })) || [];
+    var ratioRows = "";
+    for (var ri = 0; ri < 3; ri++) {
+      var rr = r3[ri] || {};
+      ratioRows += '<div class="row" style="margin-bottom:6px">' +
+        '<input id="c_r_from' + ri + '" type="number" min="0" placeholder="' + [150, 200, 300][ri] + '" style="flex:1" value="' +
+          (rr.from != null ? rr.from : "") + '">' +
+        '<input id="c_r_wage' + ri + '" type="number" min="0" placeholder="' + [2500, 2500, 3000][ri] + '" style="flex:1" value="' +
+          (rr.wage != null ? rr.wage : "") + '">' +
+        '<input id="c_r_back' + ri + '" type="number" min="0" max="100" placeholder="' + (ri ? "20" : "") + '" style="flex:1" value="' +
+          (rr.back_rate != null ? rr.back_rate : "") + '"></div>';
+    }
 
     var val = function (k) { return esc(c && c[k] != null ? c[k] : ""); };
 
@@ -622,6 +641,10 @@
           (r2.from != null ? r2.from : "") + '">' +
         '<input id="c_s_wage" type="number" min="0" placeholder="3500" style="flex:1" value="' +
           (r2.wage != null ? r2.wage : "") + '"></div></div>' +
+      '<div class="field"><label>達成率スライド（達成率% ／ 時給 ／ バック下限%）</label>' +
+        '<div style="color:var(--muted);font-size:11.5px;margin-bottom:6px">達成率 ＝ 個人売上 ÷（基本時給 × 勤務時間）。' +
+        'バック下限は、達成したときにボトルなどのバック率を少なくともその%にします（空欄なら時給だけ）</div>' +
+        ratioRows + '</div>' +
       (c ? '<div class="field"><label for="c_active">状態</label><select id="c_active">' +
         '<option value="1"' + (c.is_active ? " selected" : "") + ">在籍</option>" +
         '<option value="0"' + (!c.is_active ? " selected" : "") + ">退店</option></select></div>" : "") +
@@ -635,6 +658,15 @@
           var sf = root.querySelector("#c_s_from").value, sw = root.querySelector("#c_s_wage").value;
           if (nf !== "" && nw !== "") rules.push({ type: "nomination", from: Number(nf), wage: Number(nw) });
           if (sf !== "" && sw !== "") rules.push({ type: "sales", from: Number(sf), wage: Number(sw) });
+          for (var ri = 0; ri < 3; ri++) {
+            var rf = root.querySelector("#c_r_from" + ri).value, rw = root.querySelector("#c_r_wage" + ri).value;
+            var rb = root.querySelector("#c_r_back" + ri).value;
+            if (rf !== "" && rw !== "") {
+              var rule = { type: "ratio", from: Number(rf), wage: Number(rw) };
+              if (rb !== "") rule.back_rate = Number(rb);
+              rules.push(rule);
+            }
+          }
 
           var txt = function (id) {
             var v = root.querySelector("#" + id).value.trim();

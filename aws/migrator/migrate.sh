@@ -53,8 +53,10 @@ case "$cmd" in
     if [ $# -gt 0 ]; then
       set -- $(for n in "$@"; do echo "$SQL_DIR/$n"; done)
     else
-      # 001〜016 を番号順に、最後に だんどり共通_017-027.sql
-      set -- $(ls "$SQL_DIR"/[0-9][0-9][0-9]_*.sql | sort) "$SQL_DIR"/だんどり共通_*.sql
+      # 名前にある最初の3桁の番号の順（001…016 → だんどり共通_017-027 → 028…）
+      set -- $(for f in "$SQL_DIR"/*.sql; do
+                 n=$(basename "$f" | grep -oE '[0-9]{3}' | head -1); echo "${n:-999} $f"
+               done | sort -n | awk '{print $2}')
     fi
     run_files "$@"
     echo "== schema 完了"
