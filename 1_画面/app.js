@@ -257,7 +257,7 @@
             '<span class="tno">' + esc(r.table_no || "—") + "</span>" +
             '<span class="gname">' + esc(r.guest || "（お名前なし）") + "</span>" +
             '<span class="meta">' +
-              "<span>" + esc(r.main_cast || "フリー") + "</span>" +
+              "<span>" + esc(r.casts || r.main_cast || "フリー") + "</span>" +
               "<span>" + r.head_count + "名</span>" +
               '<span class="min mono">' + r.minutes + "分</span>" +
             "</span>" +
@@ -326,11 +326,13 @@
   function loadTicket(id) {
     return Promise.all([
       sb.from("night_visit").select("*").eq("id", id).single(),
-      sb.from("night_visit_item").select("*").eq("visit_id", id).order("punched_at")
+      sb.from("night_visit_item").select("*").eq("visit_id", id).order("punched_at"),
+      sb.from("night_visit_cast").select("*").eq("visit_id", id).order("seated_at")
     ]).then(function (r) {
       if (r[0].error) { fail(r[0].error); return; }
       S.visit = r[0].data;
       S.items = r[1].data || [];
+      S.seated = (r[2].data || []).map(function (x) { return x.cast_id; });
       renderTicket();
       loadBottles();
     });
@@ -352,8 +354,7 @@
 
     // キャスト選択
     $("castBtn").textContent = v.main_cast_id ? "担当を変える" : "担当を決める";
-    $("castSel").innerHTML = '<option value="">（担当：' + (castName(v.main_cast_id) || "なし") + "）</option>" +
-      S.casts.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + "</option>"; }).join("");
+    renderSeated();
 
     // メニュー
     var byCat = {};
@@ -432,17 +433,91 @@
     );
   });
 
-  function addItem(menuId) {
+  function renderSeated() {
+    var seated = S.seated || [];
+    $("seatCasts").innerHTML = seated.map(function (id) {
+      return '<span class="tag settled" style="font-size:13px;padding:6px 10px">' + esc(castName(id)) +
+        ' <button data-unseat="' + id + '" title="外す" style="border:0;background:none;color:inherit;font-weight:700;cursor:pointer">×</button></span>';
+    }).join("") +
+      '<button class="btn ghost" id="seatAdd" style="padding:6px 12px">＋ キャストを足す</button>' +
+      (seated.length ? "" : '<span style="color:var(--muted);font-size:12px">まだ誰もついていません</span>');
+    Array.prototype.forEach.call($("seatCasts").querySelectorAll("button[data-unseat]"), function (b) {
+      b.addEventListener("click", function () {
+        sb.rpc("night_visit_cast_remove", { p_visit: S.visit.id, p_cast: b.dataset.unseat }).then(function (q) {
+          if (q.error) { fail(q.error); return; }
+          loadTicket(S.visit.id);
+        });
+      });
+    });
+    $("seatAdd").addEventListener("click", function () {
+      var rest = S.casts.filter(function (c) { return seated.indexOf(c.id) < 0; });
+      if (!rest.length) { toast("全員ついています", "err"); return; }
+      modal("<h2>卓につくキャスト</h2>" +
+        '<div class="menu-grid">' + rest.map(function (c) {
+          return '<button class="menu-btn" data-seat="' + c.id + '"><b>' + esc(c.name) + "</b></button>";
+        }).join("") + "</div>" +
+        '<div class="row" style="margin-top:16px"><button class="btn ghost" id="m_cancel" style="flex:1">やめる</button></div>',
+        function (root) {
+          root.querySelector("#m_cancel").addEventListener("click", closeModal);
+          Array.prototype.forEach.call(root.querySelectorAll("button[data-seat]"), function (b) {
+            b.addEventListener("click", function () {
+              sb.rpc("night_visit_cast_add", { p_visit: S.visit.id, p_cast: b.dataset.seat }).then(function (q) {
+                if (q.error) { fail(q.error); return; }
+                closeModal(); loadTicket(S.visit.id);
+              });
+            });
+          });
+        });
+    });
+  }
+
+  function punch(menuId, castId) {
     sb.rpc("night_add_item", {
       p_visit: S.visit.id,
       p_menu: menuId,
       p_quantity: Number($("qtyInput").value) || 1,
-      p_cast: $("castSel").value || null
+      p_cast: castId || null
     }).then(function (q) {
       if (q.error) { fail(q.error); return; }
       $("qtyInput").value = 1;
       loadTicket(S.visit.id);
     });
+  }
+
+  function addItem(menuId) {
+    var m = S.menus.filter(function (x) { return x.id === menuId; })[0];
+    var hasBack = m && (m.back_amount > 0 || Number(m.back_rate) > 0);
+    if (!hasBack) { punch(menuId, null); return; }   // バックの無い注文は、そのまま
+
+    var seated = S.seated || [];
+    var others = S.casts.filter(function (c) { return seated.indexOf(c.id) < 0; });
+    modal("<h2>" + esc(m.name) + "　誰にバックを付けますか？</h2>" +
+      (seated.length ? '<div class="menu-grid">' + seated.map(function (id) {
+        return '<button class="menu-btn" data-pick="' + id + '"><b>' + esc(castName(id)) + "</b><span>ついている</span></button>";
+      }).join("") + "</div>" : '<p style="color:var(--muted);font-size:12.5px">この卓には、まだ誰もついていません。</p>') +
+      '<div class="field" style="margin-top:12px"><label for="pk_other">ほかのキャスト（選ぶと、この卓に付いたことにもなります）</label>' +
+        '<select id="pk_other"><option value="">（選ばない）</option>' +
+        others.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + "</option>"; }).join("") +
+        "</select></div>" +
+      '<div class="row" style="margin-top:16px">' +
+        '<button class="btn ghost" id="m_cancel">やめる</button>' +
+        '<button class="btn ghost" id="m_none">バックなしで打つ</button>' +
+        '<button class="btn primary" id="m_ok" style="flex:1">この人に付ける</button></div>',
+      function (root) {
+        root.querySelector("#m_cancel").addEventListener("click", closeModal);
+        root.querySelector("#m_none").addEventListener("click", function () { closeModal(); punch(menuId, "00000000-0000-0000-0000-000000000000"); });
+        Array.prototype.forEach.call(root.querySelectorAll("button[data-pick]"), function (b) {
+          b.addEventListener("click", function () { closeModal(); punch(menuId, b.dataset.pick); });
+        });
+        root.querySelector("#m_ok").addEventListener("click", function () {
+          var id = root.querySelector("#pk_other").value;
+          if (!id) { toast("キャストを選んでください", "err"); return; }
+          sb.rpc("night_visit_cast_add", { p_visit: S.visit.id, p_cast: id }).then(function (q) {
+            if (q.error) { fail(q.error); return; }
+            closeModal(); punch(menuId, id);
+          });
+        });
+      });
   }
 
   function removeItem(itemId) {

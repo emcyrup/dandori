@@ -70,11 +70,11 @@
       <div class="ticket">
         <div class="panel">
           <h2>メニュー</h2>
-          <div class="row" style="margin-bottom:12px">
-            <label class="field" style="margin:0;flex:1 1 140px">
-              <span style="font-size:12px;color:var(--muted)">バック先のキャスト</span>
-              <select id="castSel"></select>
-            </label>
+          <div class="row" style="margin-bottom:12px;align-items:flex-end">
+            <div class="field" style="margin:0;flex:1 1 200px">
+              <span style="font-size:12px;color:var(--muted)">ついているキャスト（バックが付く注文のとき、この中から選びます）</span>
+              <div class="row" id="seatCasts" style="gap:6px;flex-wrap:wrap;margin-top:4px"></div>
+            </div>
             <label class="field" style="margin:0;width:96px">
               <span style="font-size:12px;color:var(--muted)">数量</span>
               <input id="qtyInput" type="number" min="1" value="1" inputmode="numeric">
