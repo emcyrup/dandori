@@ -20,6 +20,8 @@ PM2="./node_modules/.bin/pm2"
 MIG="../aws/migrator/migrate.sh"
 export PGHOST="$DB_HOST" PGPORT="${DB_PORT:-5432}" PGDATABASE="$DB_NAME" PGUSER="$DB_USER" PGPASSWORD="$DB_PASSWORD" PGSSLMODE="${DB_SSLMODE:-prefer}"
 export SQL_DIR="$(cd ../2_データベース && pwd)"
+STORE="$(echo "${STORE:-dandori}" | tr -cd 'A-Za-z0-9_-' | tr 'A-Z' 'a-z')"; STORE="${STORE:-dandori}"
+[ -d "../stores/$STORE" ] && export STORE_SQL_DIR="$(cd "../stores/$STORE" && pwd)" || export STORE_SQL_DIR=""
 export AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SOURCE_DB_URL
 URL="http://127.0.0.1:${LISTEN_PORT:-8032}"
 
@@ -50,7 +52,7 @@ wait_http() {  # wait_http <URL> <説明>
 }
 
 check() {
-  echo "== 動作確認"
+  echo "== 動作確認（店舗: $STORE）"
   wait_http "$URL/health" "入口"
   ok() { printf '   %-12s %s\n' "$1" "$2"; }
   ok 入口     "$(curl -s -o /dev/null -w %{http_code} $URL/login.html)"
@@ -59,7 +61,7 @@ check() {
   ok ファイル "$(curl -s -o /dev/null -w %{http_code} $URL/storage/v1/status)"
   ok 関数     "$(curl -s -o /dev/null -w %{http_code} -X POST -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d '{}' $URL/functions/v1/send-outbox)"
   ok 公開URL  "$(curl -s -m 10 -o /dev/null -w %{http_code} "$SITE_URL/login.html" || echo '--')"
-  $PM2 ls | grep -E "│ (rest|auth|storage|gateway|fn-|outbox)" | awk -F'│' '{gsub(/ /,"",$3); gsub(/ /,"",$10); printf "   %-16s %s\n", $3, $10}' || true
+  $PM2 ls | grep -E "│ $STORE-" | awk -F'│' '{gsub(/ /,"",$3); gsub(/ /,"",$10); printf "   %-22s %s\n", $3, $10}' || true
   echo "== 完了: $SITE_URL/"
 }
 
@@ -75,7 +77,7 @@ reboot_hook() {  # サーバー再起動後に自分で立ち上がるように�
 
 MODE="${1:-}"
 if [ "$MODE" = "--auto" ]; then
-  if [ "$(psql -X -tAc "select to_regclass('public.tenant') is not null" 2>/dev/null)" = "t" ] && $PM2 describe gateway >/dev/null 2>&1; then
+  if [ "$(psql -X -tAc "select to_regclass('public.tenant') is not null" 2>/dev/null)" = "t" ] && $PM2 describe "$STORE-gateway" >/dev/null 2>&1; then
     MODE=""; echo "== 2回目以降の配備として進めます"
   else
     MODE="--init"; echo "== 初回の配備として進めます"
@@ -90,8 +92,8 @@ case "$MODE" in
     echo "== ファイル置き場の表"
     PGUSER=supabase_storage_admin PGPASSWORD="$STORAGE_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 -f db/storage-schema.sql
     echo "== ログイン（GoTrue）を先に起動して、テーブルを作らせる"
-    $PM2 start ecosystem.config.cjs --only auth >/dev/null
-    wait_http "http://127.0.0.1:${AUTH_PORT:-38033}/health" "ログイン"
+    $PM2 start ecosystem.config.cjs --only "$STORE-auth" >/dev/null
+    wait_http "http://127.0.0.1:${AUTH_PORT:-$(( ${LISTEN_PORT:-8032} + 30001 ))}/health" "ログイン"
     echo "== テーブル作成（2_データベース を全部）"
     bash "$MIG" schema
     echo "== 全部起動"
@@ -105,7 +107,7 @@ case "$MODE" in
     bash "$MIG" schema "$2"
     ;;
   --status) $PM2 ls; check ;;
-  --stop)   $PM2 delete all; echo "== 止めました" ;;
+  --stop)   $PM2 delete "/^$STORE-/" >/dev/null 2>&1; $PM2 save --force >/dev/null 2>&1; echo "== $STORE を止めました" ;;
   "")
     echo "== 入れ替え"
     npm install --no-audit --no-fund --omit=dev 2>&1 | tail -1

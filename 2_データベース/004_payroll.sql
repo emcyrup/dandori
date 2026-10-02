@@ -274,7 +274,10 @@ $$;
 --  給与の試算（保存しません。画面に出すためのもの）
 --    期間を指定すると、その期間のキャスト全員ぶんを返します。
 -- ----------------------------------------------------------------------------
-create or replace function public.night_payroll_preview(
+-- （029 で列が増えるので、いちど消してから作ります。017-027 の「ふた」が付いていればそれも）
+drop function if exists public.night_payroll_preview(uuid, date, date);
+drop function if exists app.night_payroll_preview_nolid(uuid, date, date);
+create function public.night_payroll_preview(
   p_store uuid, p_from date, p_to date
 ) returns table (
   cast_id        uuid,

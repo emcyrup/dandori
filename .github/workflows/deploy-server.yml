@@ -1,77 +1,105 @@
 name: deploy-server
 
-# main に入ったら、本番サーバー（dandori.olivia.ai-labo.cloud）へ SSH で配備する。
+# main に入ったら、店舗ごとの本番サーバーへ SSH で配備する。
+#   ・店舗は GitHub の「Environment」1つにつき1店舗（例: olivia）。Variables / Secrets を店舗ごとに持つ
+#   ・配備する店舗の一覧は、リポジトリの Variables の STORES（例: olivia,second）。無ければ olivia だけ
 #   ・ソースを tar で送る（サーバーに git も Docker も要らない）
 #   ・server/install.sh → setup.sh → deploy.sh --auto（初回は --init、2回目からは入れ替え）
-#   ・2_データベース に変更があったときだけ、SQL を流す（db.sh schema）
+#   ・2_データベース か stores/<店舗>/ に変更があったときだけ、SQL を流す
 #
-# 必要な Secrets（リポジトリの Settings → Secrets and variables → Actions）
-#   SERVER_SSH_KEY   配布された秘密鍵（id_rsa_3piece4-prod.pem の中身をそのまま）
-#   DB_PASSWORD      ai_labo_dbuser のパスワード
-#   任意: SMTP_USER / SMTP_PASS / SMTP_ADMIN_EMAIL / ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / PIXABAY_API_KEY
-# 必要な Variables（同じ画面の Variables タブ。無ければ下の既定値）
-#   SERVER_HOST=15.168.86.215  SERVER_USER=3piece_prod4  SERVER_DIR=dandori  SITE_URL=https://dandori.olivia.ai-labo.cloud
+# 店舗の Environment（Settings → Environments → New environment、名前は店舗名）に入れるもの
+#   Secrets  : SERVER_SSH_KEY（配布された秘密鍵の中身）, DB_PASSWORD
+#              任意: SMTP_USER / SMTP_PASS / SMTP_ADMIN_EMAIL / ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / PIXABAY_API_KEY
+#   Variables: SERVER_HOST, SERVER_USER, SERVER_DIR, SITE_URL, LISTEN_PORT, DB_NAME, DB_USER
+#              （olivia は下の既定値が入っているので、無くても動く）
 on:
   push:
     branches: [main]
-    paths: ["1_画面/**", "2_データベース/**", "3_サーバー/**", "server/**", "aws/migrator/**", ".github/workflows/deploy-server.yml"]
+    paths: ["1_画面/**", "2_データベース/**", "3_サーバー/**", "stores/**", "server/**", "aws/migrator/**", ".github/workflows/deploy-server.yml"]
   workflow_dispatch:
     inputs:
+      store:
+        description: "配備する店舗（空なら STORES の全部）"
+        type: string
+        default: ""
       run_sql:
-        description: "2_データベース の SQL を全部流す"
+        description: "SQL を全部流す"
         type: boolean
         default: false
 
 permissions:
   contents: read
 
-concurrency:
-  group: deploy-server
-  cancel-in-progress: false
-
 jobs:
-  deploy:
+  plan:
     runs-on: ubuntu-latest
-    environment: production
-    env:
-      SERVER_HOST: ${{ vars.SERVER_HOST || '15.168.86.215' }}
-      SERVER_USER: ${{ vars.SERVER_USER || '3piece_prod4' }}
-      SERVER_DIR:  ${{ vars.SERVER_DIR  || 'dandori' }}
-      SITE_URL:    ${{ vars.SITE_URL    || 'https://dandori.olivia.ai-labo.cloud' }}
+    outputs:
+      stores: ${{ steps.list.outputs.stores }}
+      run_sql: ${{ steps.sql.outputs.run }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: 文法チェック
         run: |
           for f in 1_画面/*.js; do node --check "$f"; done
           for f in server/*.sh aws/*.sh; do bash -n "$f"; done
           sh -n aws/migrator/migrate.sh
           for f in server/gateway/*.mjs server/storage/*.mjs server/lib/*.mjs server/outbox/*.mjs; do node --check "$f"; done
-
-      - name: SQL を流すか決める
+      - name: 配備する店舗
+        id: list
+        run: |
+          raw="${{ inputs.store }}"
+          [ -n "$raw" ] || raw="${{ vars.STORES }}"
+          [ -n "$raw" ] || raw="olivia"
+          json=$(echo "$raw" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.stringify(s.trim().split("\n"))))')
+          echo "stores=$json" >> "$GITHUB_OUTPUT"
+          echo "店舗: $json"
+      - name: SQL を流すか
         id: sql
         run: |
           run=false
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             run="${{ inputs.run_sql }}"
           elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && \
-               [ -n "$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 2_データベース aws/migrator/post.sql 2>/dev/null)" ]; then
+               [ -n "$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 2_データベース stores aws/migrator/post.sql 2>/dev/null)" ]; then
             run=true
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "SQL を流す: $run"
 
+  deploy:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        store: ${{ fromJSON(needs.plan.outputs.stores) }}
+    environment: ${{ matrix.store }}
+    concurrency:
+      group: deploy-${{ matrix.store }}
+      cancel-in-progress: false
+    env:
+      STORE:       ${{ matrix.store }}
+      SERVER_HOST: ${{ vars.SERVER_HOST || '15.168.86.215' }}
+      SERVER_USER: ${{ vars.SERVER_USER || '3piece_prod4' }}
+      SERVER_DIR:  ${{ vars.SERVER_DIR  || format('dandori-{0}', matrix.store) }}
+      SITE_URL:    ${{ vars.SITE_URL    || 'https://dandori.olivia.ai-labo.cloud' }}
+      LISTEN_PORT: ${{ vars.LISTEN_PORT || '8032' }}
+      DB_NAME:     ${{ vars.DB_NAME     || 'dandoriolivia' }}
+      DB_USER:     ${{ vars.DB_USER     || 'ai_labo_dbuser' }}
+    steps:
+      - uses: actions/checkout@v4
+
       - name: SSH の準備
         env:
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
-          [ -n "$SSH_KEY" ] || { echo "!! Secrets の SERVER_SSH_KEY が空です"; exit 1; }
+          [ -n "$SSH_KEY" ] || { echo "!! Environment「$STORE」の Secrets に SERVER_SSH_KEY がありません"; exit 1; }
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p 22 -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
@@ -85,14 +113,13 @@ jobs:
           EOF
           ssh prod 'echo "接続OK: $(whoami)@$(hostname) node $(node -v 2>/dev/null)"'
 
-      - name: ソースを送る
+      - name: ソースを送る（~/${{ env.SERVER_DIR }}）
         run: |
-          git archive --format=tar HEAD 1_画面 2_データベース 3_サーバー aws server README_はじめにお読みください.txt | gzip > /tmp/src.tgz
-          ls -la /tmp/src.tgz
-          ssh prod "mkdir -p ~/$SERVER_DIR && cd ~/$SERVER_DIR && rm -rf 1_画面 2_データベース 3_サーバー aws && tar -xzf - " < /tmp/src.tgz
-          ssh prod "cd ~/$SERVER_DIR && chmod +x server/*.sh aws/*.sh aws/migrator/migrate.sh && ls"
+          git archive --format=tar HEAD 1_画面 2_データベース 3_サーバー stores aws server README_はじめにお読みください.txt | gzip > /tmp/src.tgz
+          ssh prod "mkdir -p ~/$SERVER_DIR && cd ~/$SERVER_DIR && rm -rf 1_画面 2_データベース 3_サーバー stores aws && tar -xzf -" < /tmp/src.tgz
+          ssh prod "cd ~/$SERVER_DIR && chmod +x server/*.sh aws/*.sh aws/migrator/migrate.sh && ls stores"
 
-      - name: 設定（Secrets → .env）
+      - name: 設定（Variables / Secrets → .env）
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -103,9 +130,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
-          [ -n "$DB_PASSWORD" ] || { echo "!! Secrets の DB_PASSWORD が空です"; exit 1; }
-          # 値はコマンドラインに出さず、標準入力で渡す
-          for k in SITE_URL DB_PASSWORD SMTP_USER SMTP_PASS SMTP_ADMIN_EMAIL ANTHROPIC_API_KEY GEMINI_API_KEY OPENAI_API_KEY PIXABAY_API_KEY; do
+          [ -n "$DB_PASSWORD" ] || { echo "!! Environment「$STORE」の Secrets に DB_PASSWORD がありません"; exit 1; }
+          for k in STORE SITE_URL LISTEN_PORT DB_NAME DB_USER DB_PASSWORD SMTP_USER SMTP_PASS SMTP_ADMIN_EMAIL ANTHROPIC_API_KEY GEMINI_API_KEY OPENAI_API_KEY PIXABAY_API_KEY; do
             printf '%s' "${!k}" | ssh prod "cd ~/$SERVER_DIR/server && ./env-set.sh $k \"\$(cat)\""
           done
           ssh prod "cd ~/$SERVER_DIR/server && ./setup.sh"
@@ -116,8 +142,8 @@ jobs:
       - name: 配備
         run: ssh prod "cd ~/$SERVER_DIR/server && ./deploy.sh --auto"
 
-      - name: SQL（2_データベース に変更があったとき）
-        if: steps.sql.outputs.run == 'true'
+      - name: SQL（データベースに変更があったとき）
+        if: needs.plan.outputs.run_sql == 'true'
         run: ssh prod "cd ~/$SERVER_DIR/server && ./db.sh schema 2>&1 | grep -v NOTICE"
 
       - name: 公開 URL の確認

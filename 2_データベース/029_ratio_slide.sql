@@ -402,17 +402,3 @@ begin
     raise notice '%', app.add_guard('public.night_payroll_daily(uuid,date,date)',   'mine', '給与の内訳');
   end if;
 end $$;
-
-
--- ----------------------------------------------------------------------------
---  7. Olivia のキャストに、達成率スライドを入れる（まだ何も設定していない人だけ）
---       150% … 時給 2,500円
---       200% … 時給 2,500円 ＋ バック下限 20%
---       300% … 時給 3,000円 ＋ バック下限 20%
--- ----------------------------------------------------------------------------
-update public.night_cast
-   set wage_rules = '[{"type":"ratio","from":150,"wage":2500},
-                      {"type":"ratio","from":200,"wage":2500,"back_rate":20},
-                      {"type":"ratio","from":300,"wage":3000,"back_rate":20}]'::jsonb
- where store_id in (select id from public.store where name = 'Olivia')
-   and wage_rules = '[]'::jsonb;

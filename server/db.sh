@@ -6,7 +6,7 @@
 #    ./db.sh psql                      対話モード（\q で終了）
 #    ./db.sh demo                      デモデータを入れる
 #    ./db.sh import                    Supabase からデータを移す（.env の SOURCE_DB_URL）
-#    ./db.sh schema [FILE.sql]         2_データベース の SQL を流す（省略で全部）→ 仕上げ
+#    ./db.sh schema [FILE.sql]         SQL を流す（省略で 2_データベース 全部 → stores/<店舗>/ 全部）→ 仕上げ
 #    ./db.sh user-add メール パスワード 名前 [役割]   ログインとスタッフを作る（最初の店長など）
 # ============================================================================
 set -euo pipefail
@@ -15,6 +15,8 @@ cd "$(dirname "$0")"
 set -a; . ./.env; set +a
 export PGHOST="$DB_HOST" PGPORT="${DB_PORT:-5432}" PGDATABASE="$DB_NAME" PGUSER="$DB_USER" PGPASSWORD="$DB_PASSWORD" PGSSLMODE="${DB_SSLMODE:-prefer}"
 export SQL_DIR="$(cd ../2_データベース && pwd)"
+STORE="$(echo "${STORE:-dandori}" | tr -cd 'A-Za-z0-9_-' | tr 'A-Z' 'a-z')"; STORE="${STORE:-dandori}"
+[ -d "../stores/$STORE" ] && export STORE_SQL_DIR="$(cd "../stores/$STORE" && pwd)" || export STORE_SQL_DIR=""
 export AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SOURCE_DB_URL
 MIG="../aws/migrator/migrate.sh"
 

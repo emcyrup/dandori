@@ -580,7 +580,9 @@ create policy p_night_receivable_log on public.night_receivable_log for all
 
 -- 今あいている卓の一覧（ホール画面用）
 -- security_invoker = on … ビュー越しでもRLSが効くようにします（これがないと素通りします）
-create or replace view public.v_open_visit with (security_invoker = on) as
+-- （あとの SQL で列が増えることがあるので、いちど消してから作り直します）
+drop view if exists public.v_open_visit;
+create view public.v_open_visit with (security_invoker = on) as
 select v.id, v.store_id, v.business_date, v.table_no, v.head_count,
        coalesce(c.name, v.guest_name) as guest,
        ca.name as main_cast,

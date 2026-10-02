@@ -18,11 +18,20 @@ const need = (k) => { if (!env[k]) throw new Error(`.env の ${k} が空です�
 const DB = (user, pw) => `postgres://${user}:${encodeURIComponent(pw)}@${env.DB_HOST || "127.0.0.1"}:${env.DB_PORT || 5432}/${need("DB_NAME")}?sslmode=${env.DB_SSLMODE || "prefer"}`;
 const SITE_URL = need("SITE_URL");
 const JWT_SECRET = need("JWT_SECRET");
-const PORTS = { rest: env.REST_PORT || "38032", auth: env.AUTH_PORT || "38033", storage: env.STORAGE_PORT || "38034", fnBase: Number(env.FN_BASE_PORT || 38041) };
+// 店舗名（PM2 のプロセス名の頭に付く。同じサーバーに複数店舗を置いても混ざらない）
+const STORE = (env.STORE || "dandori").replace(/[^a-z0-9_-]/gi, "").toLowerCase() || "dandori";
+// 中の部品のポート：決めていなければ LISTEN_PORT + 30000 から（8032 → 38032, 38033, 38034, 38041〜）
+const LISTEN = Number(env.LISTEN_PORT || 8032);
+const PORTS = {
+  rest: env.REST_PORT || String(LISTEN + 30000),
+  auth: env.AUTH_PORT || String(LISTEN + 30001),
+  storage: env.STORAGE_PORT || String(LISTEN + 30002),
+  fnBase: Number(env.FN_BASE_PORT || LISTEN + 30009),
+};
 const LOGS = path.join(HERE, "logs");
 fs.mkdirSync(LOGS, { recursive: true });
 const log = (name) => ({ out_file: path.join(LOGS, `${name}.log`), error_file: path.join(LOGS, `${name}.log`), merge_logs: true, log_date_format: "YYYY-MM-DD HH:mm:ss", time: true });
-const common = (name) => ({ name, cwd: HERE, autorestart: true, max_restarts: 50, restart_delay: 3000, ...log(name) });
+const common = (short) => { const name = `${STORE}-${short}`; return { name, cwd: HERE, autorestart: true, max_restarts: 50, restart_delay: 3000, ...log(name) }; };
 
 // 3_サーバー の関数（lib/ports.mjs と同じ計算）
 const FN_DIR = path.join(ROOT, "3_サーバー");
@@ -96,4 +105,4 @@ if (env.OUTBOX === "1") {
   });
 }
 
-module.exports = { apps };
+module.exports = { apps, STORE };

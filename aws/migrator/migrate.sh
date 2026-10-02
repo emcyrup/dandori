@@ -13,7 +13,8 @@
 #  接続先は PGHOST / PGUSER / PGPASSWORD（RDS マスター）で受け取ります。
 # ============================================================================
 set -eu
-SQL_DIR="${SQL_DIR:-/work/sql}"
+SQL_DIR="${SQL_DIR:-/work/sql}"          # 全店共通の SQL（2_データベース）
+STORE_SQL_DIR="${STORE_SQL_DIR:-}"       # その店舗だけの SQL（stores/<店舗>/）。空なら無し
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export PGDATABASE="${PGDATABASE:-postgres}"
 export PGSSLMODE="${PGSSLMODE:-require}"
@@ -51,12 +52,18 @@ case "$cmd" in
 
   schema)
     if [ $# -gt 0 ]; then
-      set -- $(for n in "$@"; do echo "$SQL_DIR/$n"; done)
+      # 名前で指定：共通 → 店舗 の順にさがす
+      set -- $(for n in "$@"; do
+                 if [ -f "$SQL_DIR/$n" ]; then echo "$SQL_DIR/$n";
+                 elif [ -n "$STORE_SQL_DIR" ] && [ -f "$STORE_SQL_DIR/$n" ]; then echo "$STORE_SQL_DIR/$n";
+                 else echo "!! $n が見つかりません" >&2; exit 2; fi
+               done)
     else
       # 名前にある最初の3桁の番号の順（001…016 → だんどり共通_017-027 → 028…）
       set -- $(for f in "$SQL_DIR"/*.sql; do
                  n=$(basename "$f" | grep -oE '[0-9]{3}' | head -1); echo "${n:-999} $f"
-               done | sort -n | awk '{print $2}')
+               done | sort -n | awk '{print $2}') \
+             $( [ -n "$STORE_SQL_DIR" ] && ls "$STORE_SQL_DIR"/*.sql 2>/dev/null | sort )
     fi
     run_files "$@"
     echo "== schema 完了"

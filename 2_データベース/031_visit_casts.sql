@@ -88,7 +88,8 @@ grant execute on function public.night_visit_cast_remove(uuid, uuid) to authenti
 
 
 -- ---- ホールの一覧に「ついているキャスト」を足す
-create or replace view public.v_open_visit with (security_invoker = on) as
+drop view if exists public.v_open_visit;
+create view public.v_open_visit with (security_invoker = on) as
 select v.id, v.store_id, v.business_date, v.table_no, v.head_count,
        coalesce(c.name, v.guest_name) as guest,
        ca.name as main_cast,
