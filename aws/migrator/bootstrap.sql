@@ -19,6 +19,10 @@ select current_user as owner, current_database() as dbname,
 --    役割を作れる権限（CREATEROLE）が無いときは、この節は飛ばします。
 --    その場合は server/db/依頼_DB権限.sql を DB 管理者に流してもらってください。
 \if :has_createrole
+-- パスワードを do ブロックの中で使えるように、いったん設定値に入れる（$$ の中では psql 変数が使えないため）
+select set_config('dandori.authenticator_pw', :'authenticator_pw', false),
+       set_config('dandori.auth_admin_pw',    :'auth_admin_pw',    false),
+       set_config('dandori.storage_admin_pw', :'storage_admin_pw', false) \gset _
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon')          then create role anon nologin noinherit; end if;
@@ -26,18 +30,20 @@ begin
   -- RDS では BYPASSRLS が付けられないので、service_role は post.sql の RLS ポリシーで全件を許可する
   if not exists (select 1 from pg_roles where rolname = 'service_role')  then create role service_role nologin noinherit; end if;
   -- PostgREST が使う接続ユーザー
-  if not exists (select 1 from pg_roles where rolname = 'authenticator') then create role authenticator login noinherit; end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticator') then
+    execute format('create role authenticator login noinherit password %L', current_setting('dandori.authenticator_pw')); end if;
   -- GoTrue(ログイン) と Storage(ファイル) が、それぞれ自分の表を作るためのユーザー
-  if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')    then create role supabase_auth_admin login noinherit createrole; end if;
-  if not exists (select 1 from pg_roles where rolname = 'supabase_storage_admin') then create role supabase_storage_admin login noinherit createrole; end if;
+  if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')    then
+    execute format('create role supabase_auth_admin login noinherit createrole password %L', current_setting('dandori.auth_admin_pw')); end if;
+  if not exists (select 1 from pg_roles where rolname = 'supabase_storage_admin') then
+    execute format('create role supabase_storage_admin login noinherit createrole password %L', current_setting('dandori.storage_admin_pw')); end if;
   -- GoTrue / Storage の作業手順は「postgres」という名前の役割があることを前提にしている。
   -- RDS や普通のインストールにはあるが、無いサーバーもあるので、ログインできない形で作っておく
   if not exists (select 1 from pg_roles where rolname = 'postgres') then create role postgres nologin; end if;
 end $$;
 
-alter role authenticator          password :'authenticator_pw';
-alter role supabase_auth_admin    password :'auth_admin_pw';
-alter role supabase_storage_admin password :'storage_admin_pw';
+-- （すでにある役割のパスワードは変えません。同じ PostgreSQL に別店舗が動いているとき、
+--   その店舗を壊さないためです。パスワードは最初の店舗と同じものを .env に入れてください）
 
 grant anon, authenticated, service_role to authenticator;
 grant anon, authenticated, service_role to supabase_storage_admin;

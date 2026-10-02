@@ -43,9 +43,26 @@ SQL
   IFS='|' read -r can_create roles_ok is_owner has_pg ver_ok < /tmp/dandori-precheck.$$; rm -f /tmp/dandori-precheck.$$
   printf '   役割を作れる: %s / 役割がそろっている: %s / DB の持ち主: %s / postgres 役割: %s / PostgreSQL 15 以上: %s\n' "$can_create" "$roles_ok" "$is_owner" "$has_pg" "$ver_ok"
   if [ "$can_create" != "t" ] && [ "$roles_ok" != "t" ]; then
-    echo "!! 役割（anon / authenticated など）が無く、作る権限もありません。"
-    echo "   db/依頼_DB権限.sql を DB 管理者に渡して、役割を作ってもらってください。"
-    exit 1
+    if [ -n "${DB_ADMIN_PASSWORD:-}" ]; then
+      echo "== 管理者（${DB_ADMIN_USER:-postgres}）で役割を作ります"
+      PGUSER="${DB_ADMIN_USER:-postgres}" PGPASSWORD="$DB_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 \
+        -v app_user="$DB_USER" -v authenticator_pw="$AUTHENTICATOR_PASSWORD" \
+        -v auth_admin_pw="$AUTH_ADMIN_PASSWORD" -v storage_admin_pw="$STORAGE_ADMIN_PASSWORD" \
+        -f db/admin-roles.sql
+      echo "   作りました"
+    else
+      echo "!! 役割（anon / authenticated など）が無く、作る権限もありません。"
+      echo "   次のどちらかです："
+      echo "   ・.env（GitHub なら Secrets）に DB_ADMIN_PASSWORD（postgres のパスワード）を入れて、もう一度"
+      echo "   ・db/依頼_DB権限.sql を DB 管理者に渡して、役割を作ってもらう"
+      exit 1
+    fi
+  elif [ "$can_create" != "t" ] && [ -n "${DB_ADMIN_PASSWORD:-}" ]; then
+    # 役割はあるが、この店舗のユーザーへの権限付与がまだかもしれないので、管理者で確かめておく
+    PGUSER="${DB_ADMIN_USER:-postgres}" PGPASSWORD="$DB_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 \
+      -v app_user="$DB_USER" -v authenticator_pw="$AUTHENTICATOR_PASSWORD" \
+      -v auth_admin_pw="$AUTH_ADMIN_PASSWORD" -v storage_admin_pw="$STORAGE_ADMIN_PASSWORD" \
+      -f db/admin-roles.sql
   fi
   [ "$is_owner" = "t" ] || { echo "!! $DB_NAME の持ち主が $DB_USER ではありません。管理者に ALTER DATABASE $DB_NAME OWNER TO $DB_USER; を頼んでください"; exit 1; }
   [ "$ver_ok" = "t" ] || { echo "!! PostgreSQL 15 以上が必要です"; exit 1; }
@@ -94,6 +111,18 @@ case "$MODE" in
     precheck_db
     echo "== DB の初期設定（役割・権限）"
     bash "$MIG" bootstrap
+    echo "== 内部の役割でログインできるか"
+    for pair in "authenticator:$AUTHENTICATOR_PASSWORD" "supabase_auth_admin:$AUTH_ADMIN_PASSWORD" "supabase_storage_admin:$STORAGE_ADMIN_PASSWORD"; do
+      u="${pair%%:*}"; pw="${pair#*:}"
+      if ! PGUSER="$u" PGPASSWORD="$pw" psql -X -tAc "select 1" >/dev/null 2>&1; then
+        echo "!! $u で DB にログインできません。"
+        echo "   同じ PostgreSQL に別の店舗が先に動いている場合、役割のパスワードは共有です。"
+        echo "   最初の店舗の .env から AUTHENTICATOR_PASSWORD / AUTH_ADMIN_PASSWORD / STORAGE_ADMIN_PASSWORD を"
+        echo "   この店舗の .env（GitHub なら Secrets）にコピーして、もう一度実行してください。"
+        exit 1
+      fi
+    done
+    echo "   OK"
     echo "== ファイル置き場の表"
     PGUSER=supabase_storage_admin PGPASSWORD="$STORAGE_ADMIN_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 -f db/storage-schema.sql
     echo "== ログイン（GoTrue）を先に起動して、テーブルを作らせる"

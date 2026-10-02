@@ -9,6 +9,9 @@ name: deploy-server
 #
 # 店舗の Environment（Settings → Environments → New environment、名前は店舗名）に入れるもの
 #   Secrets  : SERVER_SSH_KEY（配布された秘密鍵の中身）, DB_PASSWORD
+#              DB_ADMIN_PASSWORD（postgres のパスワード。あれば役割を初回に自動で作る。終わったら消してよい）
+#              同じ PostgreSQL に2店舗目を置くとき: AUTHENTICATOR_PASSWORD / AUTH_ADMIN_PASSWORD / STORAGE_ADMIN_PASSWORD
+#                （最初の店舗のサーバー上 .env と同じ値。役割はサーバー内で共有のため）
 #              任意: SMTP_USER / SMTP_PASS / SMTP_ADMIN_EMAIL / ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / PIXABAY_API_KEY
 #   Variables: SERVER_HOST, SERVER_USER, SERVER_DIR, SITE_URL, LISTEN_PORT, DB_NAME, DB_USER
 #              （olivia は下の既定値が入っているので、無くても動く）
@@ -122,6 +125,11 @@ jobs:
       - name: 設定（Variables / Secrets → .env）
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_ADMIN_USER: ${{ secrets.DB_ADMIN_USER }}
+          DB_ADMIN_PASSWORD: ${{ secrets.DB_ADMIN_PASSWORD }}
+          AUTHENTICATOR_PASSWORD: ${{ secrets.AUTHENTICATOR_PASSWORD }}
+          AUTH_ADMIN_PASSWORD: ${{ secrets.AUTH_ADMIN_PASSWORD }}
+          STORAGE_ADMIN_PASSWORD: ${{ secrets.STORAGE_ADMIN_PASSWORD }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_ADMIN_EMAIL: ${{ secrets.SMTP_ADMIN_EMAIL }}
@@ -131,7 +139,7 @@ jobs:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
           [ -n "$DB_PASSWORD" ] || { echo "!! Environment「$STORE」の Secrets に DB_PASSWORD がありません"; exit 1; }
-          for k in STORE SITE_URL LISTEN_PORT DB_NAME DB_USER DB_PASSWORD SMTP_USER SMTP_PASS SMTP_ADMIN_EMAIL ANTHROPIC_API_KEY GEMINI_API_KEY OPENAI_API_KEY PIXABAY_API_KEY; do
+          for k in STORE SITE_URL LISTEN_PORT DB_NAME DB_USER DB_PASSWORD DB_ADMIN_USER DB_ADMIN_PASSWORD AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SMTP_USER SMTP_PASS SMTP_ADMIN_EMAIL ANTHROPIC_API_KEY GEMINI_API_KEY OPENAI_API_KEY PIXABAY_API_KEY; do
             printf '%s' "${!k}" | ssh prod "cd ~/$SERVER_DIR/server && ./env-set.sh $k \"\$(cat)\""
           done
           ssh prod "cd ~/$SERVER_DIR/server && ./setup.sh"
