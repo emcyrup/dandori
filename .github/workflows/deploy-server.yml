@@ -68,7 +68,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             run="${{ inputs.run_sql }}"
           elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && \
-               [ -n "$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 2_データベース stores aws/migrator/post.sql 2>/dev/null)" ]; then
+               [ -n "$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 2_データベース stores aws/migrator 2>/dev/null)" ]; then
             run=true
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
@@ -152,7 +152,8 @@ jobs:
 
       - name: SQL（データベースに変更があったとき）
         if: needs.plan.outputs.run_sql == 'true'
-        run: ssh prod "cd ~/$SERVER_DIR/server && ./db.sh schema 2>&1 | grep -v NOTICE"
+        # grep で NOTICE を間引くが、SQL が失敗したら pipefail でこの step も失敗させる
+        run: ssh prod "bash -o pipefail -c 'cd ~/$SERVER_DIR/server && ./db.sh schema 2>&1 | grep -v NOTICE'"
 
       - name: 公開 URL の確認
         run: |

@@ -44,6 +44,18 @@ case "${1:-}" in
                       (select id from public.tenant order by created_at limit 1))) s
       join public.tenant t on t.id = s.tenant_id"
     ;;
-  sql|demo|import|schema|bootstrap) bash "$MIG" "$@" ;;
+  schema)
+    # 単一ロールモードでは、SQL を流す間だけ FORCE RLS が外れる（pre-single.sql）。
+    # その間に画面から他の法人のデータが見えないよう、API を止めてから流し、終わったら戻す。
+    if [ "${DB_MODE:-}" = "single" ] && [ -x ./node_modules/.bin/pm2 ] && ./node_modules/.bin/pm2 describe "$STORE-rest" >/dev/null 2>&1; then
+      API="$(./node_modules/.bin/pm2 jlist 2>/dev/null | node -e '
+        let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const s=process.argv[1];
+          console.log(JSON.parse(d).map(p=>p.name).filter(n=>n===s+"-rest"||n===s+"-storage"||n.indexOf(s+"-fn-")===0).join(" "))})' "$STORE")"
+      echo "== SQL を流す間、API を止めます（$API）"
+      ./node_modules/.bin/pm2 stop $API >/dev/null
+      trap 'echo "== API を戻します"; ./node_modules/.bin/pm2 start '"$API"' >/dev/null' EXIT
+    fi
+    bash "$MIG" schema "$@" ;;
+  sql|demo|import|bootstrap) bash "$MIG" "$@" ;;
   *) sed -n '4,11p' "$0"; exit 2 ;;
 esac

@@ -43,6 +43,10 @@ wait_for() {  # GoTrue / Storage が自分の表を作り終えるのを待つ
 run_files() {
   wait_for auth.users
   wait_for storage.buckets
+  if [ "$DB_MODE" = "single" ]; then
+    echo "== 下ごしらえ (pre-single.sql)"
+    $PSQL -q -f "$HERE/pre-single.sql"
+  fi
   for f in "$@"; do
     echo "== $(basename "$f")"
     run_sql_file "$f"
