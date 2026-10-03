@@ -174,7 +174,13 @@
 
   function loadCasts() {
     return sb.from("night_cast").select("*").eq("store_id", S.store.id).order("name")
-      .then(function (q) { S.casts = q.data || []; });
+      .then(function (q) { S.casts = q.data || []; })
+      .then(function () {
+        /*  指名のメニューが無いお店（Olivia など）では、画面から「指名」を隠します。 */
+        return sb.from("night_menu").select("id").eq("store_id", S.store.id)
+          .eq("category", "nomination").eq("is_active", true).limit(1)
+          .then(function (q) { S.useNom = !!(q.data && q.data.length); }, function () { S.useNom = true; });
+      });
   }
 
   /* -------------------------------------------------------------- 画面切替 */
@@ -424,8 +430,9 @@
           "<td>" + esc(r.cast_name) +
             (r.confirmed ? ' <span class="tag settled">確定済</span>' : "") +
             (r.below_min_wage ? ' <span class="tag open">最低賃金未満</span>' : "") +
-            "<br><span style='color:var(--muted);font-size:11.5px'>本指名 " + r.nominations +
-            "／同伴 " + r.douhans + "／" + r.work_days + "日" +
+            "<br><span style='color:var(--muted);font-size:11.5px'>" +
+            (S.useNom ? "本指名 " + r.nominations + "／" : "") +
+            "同伴 " + r.douhans + "／" + r.work_days + "日" +
             (r.achieved_pct != null && r.work_minutes > 0 ? "／達成率 " + r.achieved_pct + "%" : "") + "</span></td>" +
           "<td class='num'>" + hm(r.work_minutes) + "</td>" +
           "<td class='num'>" + yen(r.hourly_applied) +
@@ -482,8 +489,11 @@
         "<div><span>出勤</span><span class='mono'>" + r.work_days + "日　" + hm(r.work_minutes) + "</span></div>" +
         "<div><span>適用時給</span><span class='mono'>" + yen(r.hourly_applied) +
           (r.hourly_applied !== r.hourly_base ? "（基本 " + yen(r.hourly_base) + "）" : "") + "</span></div>" +
-        "<div><span>本指名／同伴／ドリンク</span><span class='mono'>" +
-          r.nominations + " / " + r.douhans + " / " + r.drinks + "</span></div>" +
+        (S.useNom
+          ? "<div><span>本指名／同伴／ドリンク</span><span class='mono'>" +
+              r.nominations + " / " + r.douhans + " / " + r.drinks + "</span></div>"
+          : "<div><span>同伴／ドリンク</span><span class='mono'>" +
+              r.douhans + " / " + r.drinks + "</span></div>") +
         (r.achieved_pct != null && r.work_minutes > 0 ?
           "<div><span>個人売上／達成率</span><span class='mono'>" + yen(r.sales) + "／" + r.achieved_pct + "%</span></div>" : "") +
         "<div style='border-top:1px solid var(--line);margin-top:8px;padding-top:8px'></div>" +
@@ -631,7 +641,7 @@
         '<input id="c_joined" type="date" value="' + val("joined_on") + '"></div>' +
       '<div class="field"><label for="c_wage">基本時給（円）</label>' +
         '<input id="c_wage" type="number" min="0" inputmode="numeric" value="' + (c ? c.hourly_wage : 0) + '"></div>' +
-      '<div class="field"><label for="c_n_from">本指名 ○本以上で時給（空欄ならスライドなし）</label>' +
+      '<div class="field"' + (S.useNom ? "" : ' style="display:none"') + '><label for="c_n_from">本指名 ○本以上で時給（空欄ならスライドなし）</label>' +
         '<div class="row"><input id="c_n_from" type="number" min="0" placeholder="10" style="flex:1" value="' +
           (r1.from != null ? r1.from : "") + '">' +
         '<input id="c_n_wage" type="number" min="0" placeholder="3000" style="flex:1" value="' +
@@ -1074,7 +1084,7 @@
 
     h += "<h4 class='ps-sub'>日ごと</h4><table class='ps-detail'>" +
       "<thead><tr><th>日</th><th>出勤</th><th>退勤</th><th class='num'>時間</th>" +
-      "<th class='num'>時給ぶん</th><th class='num'>指名</th><th class='num'>同伴</th>" +
+      "<th class='num'>時給ぶん</th>" + (S.useNom ? "<th class='num'>指名</th>" : "") + "<th class='num'>同伴</th>" +
       "<th class='num'>ドリンク</th><th class='num'>バック</th><th class='num'>日払い</th>" +
       "</tr></thead><tbody>";
     daily.forEach(function (r) {
@@ -1084,7 +1094,7 @@
         "<td>" + (r.clock_out_hm || "—") + "</td>" +
         "<td class='num'>" + (+r.work_hours) + "h</td>" +
         "<td class='num'>" + yen(r.wage_amount) + "</td>" +
-        "<td class='num'>" + (r.nominations || "") + "</td>" +
+        (S.useNom ? "<td class='num'>" + (r.nominations || "") + "</td>" : "") +
         "<td class='num'>" + (r.douhans || "") + "</td>" +
         "<td class='num'>" + (r.drinks || "") + "</td>" +
         "<td class='num'>" + yen(r.back_amount) + "</td>" +
@@ -1098,7 +1108,7 @@
     h += "<tr class='ps-total'><td colspan='3'>合計　" + daily.length + "日</td>" +
       "<td class='num'>" + Math.round(tot.h * 100) / 100 + "h</td>" +
       "<td class='num'>" + yen(tot.w) + "</td>" +
-      "<td class='num'>" + tot.n + "</td><td class='num'>" + tot.d + "</td>" +
+      (S.useNom ? "<td class='num'>" + tot.n + "</td>" : "") + "<td class='num'>" + tot.d + "</td>" +
       "<td class='num'>" + tot.k + "</td><td class='num'>" + yen(tot.b) + "</td>" +
       "<td class='num'>" + yen(tot.p) + "</td></tr></tbody></table>";
 
@@ -1223,7 +1233,7 @@
   function detailRows(view, cat) {
     var d = S.detail || { daily: [], summary: [], items: [] };
     if (view === "day") {
-      return {
+      var day = {
         head: ["日", "曜", "出勤", "退勤", "時間", "遅刻", "時給", "時給ぶん",
                "指名", "同伴", "ドリンク", "売上", "バック", "日払い", "手当", "控除"],
         body: d.daily.map(function (r) {
@@ -1235,6 +1245,14 @@
         money: [7, 11, 12, 13, 14, 15], num: [4, 5, 6, 8, 9, 10],
         noTotal: [6], date: [0]
       };
+      if (!S.useNom) {   /* 指名を使わないお店では「指名」の列（8列目）を落とします */
+        var drop = function (row) { return row.filter(function (_, i) { return i !== 8; }); };
+        day.head = drop(day.head);
+        day.body = day.body.map(drop);
+        var shift = function (ix) { return ix.filter(function (i) { return i !== 8; }).map(function (i) { return i > 8 ? i - 1 : i; }); };
+        day.money = shift(day.money); day.num = shift(day.num);
+      }
+      return day;
     }
     if (view === "sum") {
       return {
@@ -1400,14 +1418,14 @@
         return;
       }
       var t = "<thead><tr><th>月</th><th>対象期間</th><th class='num'>出勤</th>" +
-        "<th class='num'>本指名</th><th class='num'>差引支給</th><th>明細</th></tr></thead><tbody>";
+        (S.useNom ? "<th class='num'>本指名</th>" : "") + "<th class='num'>差引支給</th><th>明細</th></tr></thead><tbody>";
       rows.forEach(function (r) {
         t += "<tr><td class='mono'>" + r.period_ym + "</td>" +
           "<td class='mono' style='font-size:12px'>" +
             r.period_from.slice(5).replace("-", "/") + "〜" +
             r.period_to.slice(5).replace("-", "/") + "</td>" +
           "<td class='num'>" + (+r.work_hours) + "h</td>" +
-          "<td class='num'>" + r.nominations + "</td>" +
+          (S.useNom ? "<td class='num'>" + r.nominations + "</td>" : "") +
           "<td class='num'><b>" + yen(r.net_amount) + "</b></td>" +
           "<td style='white-space:nowrap'>" + (r.payslip_id
             ? "No." + r.payslip_no +

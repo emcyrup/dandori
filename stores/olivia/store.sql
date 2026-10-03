@@ -10,13 +10,14 @@
 --  【バックのきまり（いただいた内容）】
 --    ・すべて小計（税・サービス料を含まない金額）に対する %
 --    ・ドリンク 25% ／ シャンパン 10% ／ ボトル 10% ／ 同伴 1件 2,000円
+--    ・そのほか卓についた際の商品（セット・ソーダ・ピッチャーなど）10%（「予備バック」）
 --    ・時給は全員 2,000円スタート
 --    ・達成率スライド（150% / 200% / 300%）は、この SQL の最後で入れます
 --
 --  【料金まわり】
 --    ・メニュー表の「別途 Tax 20%」は、小計に 20% を上乗せする形で入れています
 --      （店舗の service_rate = 20、tax_rate = 0。伝票には「サービス料 20%」と出ます）
---    ・同伴の料金は、メニュー表に無いので 0 円にしてあります。管理画面で直してください
+--    ・同伴の料金は 2,000円（2026-10-03 確認）
 -- ============================================================================
 
 do $$
@@ -40,9 +41,9 @@ begin
 
   -- ---- Price List
   insert into public.night_menu(tenant_id, store_id, category, name, unit_price, back_amount, back_rate, sort_order) values
-    (t_id, s_id, 'set',    'セット（無制限・ボトルキープ）※混雑時90分制', 6000, 0,  0, 10),
-    (t_id, s_id, 'set',    'セット（60分・飲み放題）',                    5000, 0,  0, 11),
-    (t_id, s_id, 'douhan', '同伴',                                          0, 2000, 0, 40),
+    (t_id, s_id, 'set',    'セット（無制限・ボトルキープ）※混雑時90分制', 6000, 0, 10, 10),
+    (t_id, s_id, 'set',    'セット（60分・飲み放題）',                    5000, 0, 10, 11),
+    (t_id, s_id, 'douhan', '同伴',                                       2000, 2000, 0, 40),
   -- ---- Drink（キャストに付くドリンクは小計の 25%）
     (t_id, s_id, 'drink',  'キャストドリンク',  2000, 0, 25, 50),
     (t_id, s_id, 'drink',  'ビール',            1500, 0, 25, 51),
@@ -50,8 +51,8 @@ begin
     (t_id, s_id, 'drink',  'コカボム',          3000, 0, 25, 53),
     (t_id, s_id, 'drink',  'すらっと 各種',     1500, 0, 25, 54),
     (t_id, s_id, 'drink',  'チャミスル',        3000, 0, 25, 55),
-    (t_id, s_id, 'other',  'ソーダ',             500, 0,  0, 90),
-    (t_id, s_id, 'other',  'ピッチャー',        1000, 0,  0, 91),
+    (t_id, s_id, 'other',  'ソーダ',             500, 0, 10, 90),
+    (t_id, s_id, 'other',  'ピッチャー',        1000, 0, 10, 91),
   -- ---- Bottle（小計の 10%）
     (t_id, s_id, 'bottle', '吉四六',                    10000, 0, 10, 100),
     (t_id, s_id, 'bottle', '壱岐ゴールド',              10000, 0, 10, 101),
@@ -115,3 +116,20 @@ update public.night_cast
                       {"type":"ratio","from":300,"wage":3000,"back_rate":20}]'::jsonb
  where store_id in (select id from public.store where name = 'Olivia')
    and wage_rules = '[]'::jsonb;
+
+
+-- ----------------------------------------------------------------------------
+--  2026-10-03 の追加（すでに Olivia が入っている環境にも効くように、ここで直す）
+--    ・予備バック：卓についた際のそのほかの商品（セット・ソーダ・ピッチャー）に 10%
+--    ・同伴の料金を 2,000円に
+-- ----------------------------------------------------------------------------
+update public.night_menu
+   set back_rate = 10
+ where store_id in (select id from public.store where name = 'Olivia')
+   and category in ('set', 'extension', 'food', 'other')
+   and back_rate = 0 and back_amount = 0;
+
+update public.night_menu
+   set unit_price = 2000
+ where store_id in (select id from public.store where name = 'Olivia')
+   and category = 'douhan' and unit_price = 0;
