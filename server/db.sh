@@ -55,7 +55,7 @@ case "${1:-}" in
       ./node_modules/.bin/pm2 stop $API >/dev/null 2>&1 || true
       trap 'echo "== API を戻します"; ./node_modules/.bin/pm2 start '"$API"' >/dev/null 2>&1 || true' EXIT
     fi
-    bash "$MIG" schema "$@" ;;
+    shift; bash "$MIG" schema "$@" ;;
   sql|demo|import|bootstrap) bash "$MIG" "$@" ;;
   *) sed -n '4,11p' "$0"; exit 2 ;;
 esac

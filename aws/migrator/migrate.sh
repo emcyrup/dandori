@@ -76,12 +76,14 @@ case "$cmd" in
 
   schema)
     if [ $# -gt 0 ]; then
-      # 名前で指定：共通 → 店舗 の順にさがす
-      set -- $(for n in "$@"; do
-                 if [ -f "$SQL_DIR/$n" ]; then echo "$SQL_DIR/$n";
-                 elif [ -n "$STORE_SQL_DIR" ] && [ -f "$STORE_SQL_DIR/$n" ]; then echo "$STORE_SQL_DIR/$n";
-                 else echo "!! $n が見つかりません" >&2; exit 2; fi
-               done)
+      # 名前で指定：共通 → 店舗 の順にさがす（見つからなければここで止まる）
+      files=""
+      for n in "$@"; do
+        if [ -f "$SQL_DIR/$n" ]; then files="$files $SQL_DIR/$n";
+        elif [ -n "$STORE_SQL_DIR" ] && [ -f "$STORE_SQL_DIR/$n" ]; then files="$files $STORE_SQL_DIR/$n";
+        else echo "!! $n が見つかりません" >&2; exit 2; fi
+      done
+      set -- $files
     else
       # 名前にある最初の3桁の番号の順（001…016 → だんどり共通_017-027 → 028…）
       set -- $(for f in "$SQL_DIR"/*.sql; do
