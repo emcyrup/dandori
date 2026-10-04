@@ -133,3 +133,11 @@ update public.night_menu
    set unit_price = 2000
  where store_id in (select id from public.store where name = 'Olivia')
    and category = 'douhan' and unit_price = 0;
+
+-- ----------------------------------------------------------------------------
+--  AI の下書きは Claude（Anthropic）を使う（鍵は GitHub Secrets の ANTHROPIC_API_KEY）。
+--  まだ何も選んでいない法人だけ。管理画面「AI・送信」で変えられる
+-- ----------------------------------------------------------------------------
+insert into public.tenant_ai(tenant_id, ai_provider)
+select id, 'claude' from public.tenant where name = 'Olivia'
+on conflict (tenant_id) do nothing;

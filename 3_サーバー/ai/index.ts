@@ -50,7 +50,7 @@ const KEYNAME: Record<string, string[]> = {
 function keyMissing(which: string): Error {
   const list = KEYNAME[which] || [];
   return new Error(
-    "AIの鍵（キー）が見つかりません。Supabase の Edge Functions →「Secrets」に、" +
+    "AIの鍵（キー）が見つかりません。サーバーの設定（GitHub の Secrets、または server/.env）に、" +
     "名前を「" + list[0] + "」にして入れてください。" +
     "（" + list.slice(1).join(" / ") + " という名前でも読みます）",
   );
@@ -279,7 +279,7 @@ async function callClaude(model: string, text: string): Promise<string> {
     if (r.status === 401 || /invalid.*api.*key|authentication/i.test(m)) {
       throw new Error(
         "Claude（Anthropic）の鍵が違うようです。" +
-        "Supabase の Secrets に入れた ANTHROPIC_API_KEY を見なおしてください。",
+        "サーバーの設定（GitHub の Secrets）に入れた ANTHROPIC_API_KEY を見なおしてください。",
       );
     }
     throw new Error(m);
@@ -318,7 +318,7 @@ async function callOpenAI(model: string, text: string): Promise<string> {
     if (r.status === 401 || /invalid_api_key|Incorrect API key/i.test(m + code)) {
       throw new Error(
         "ChatGPT（OpenAI）の鍵が違うようです。" +
-        "Supabase の Secrets に入れた OPENAI_API_KEY を見なおしてください。",
+        "サーバーの設定（GitHub の Secrets）に入れた OPENAI_API_KEY を見なおしてください。",
       );
     }
     if (/does not exist|do not have access to the model/i.test(m)) {
