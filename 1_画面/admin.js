@@ -187,6 +187,8 @@
     $("s_withhold").value = Number(s.pay_withhold_pct || 0);
     $("s_split").value = s.seat_split ? "1" : "0";
     $("s_tableback").value = Number(s.table_back_pct || 0);
+    $("s_ratiobase").value = s.ratio_base || "wage";
+    $("s_in10").value = s.in10_amount || 0;
     $("s_theme").value = s.ui_theme || "standard";
     updateHint();
   }
@@ -220,6 +222,8 @@
       pay_withhold_pct: Number($("s_withhold").value) || 0,
       seat_split: $("s_split").value === "1",
       table_back_pct: Number($("s_tableback").value) || 0,
+      ratio_base: $("s_ratiobase").value,
+      in10_amount: Number($("s_in10").value) || 0,
       ui_theme: $("s_theme").value
     }).eq("id", S.store.id).then(function (q) {
       btn.disabled = false;

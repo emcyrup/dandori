@@ -307,7 +307,7 @@
         in10: num(labels["10時IN"], c),
         gross: num(labels["対象額"], c),
         pay: num(labels["支給額"], c),
-        pct: firstPct != null ? Math.round(num(firstPct, c) * 100) : null,
+        pct: firstPct != null ? Math.floor(num(firstPct, c) * 100 + 1e-9) : null,
         backRate: labels["％"] != null && labels["％"] !== firstPct ? Math.round(num(labels["％"], c) * 100) : null,
         douhanCount: cnt[name] ? cnt[name].douhan : null,
         kumi: cnt[name] ? cnt[name].kumi : null
@@ -425,6 +425,9 @@
             '<button class="btn ghost" data-pay="' + c.id + '">日払い</button>' +
             '<button class="btn ghost" data-adj="' + c.id + '">手当・控除</button>' +
             '<button class="btn ghost" data-fix="' + c.id + '">修正</button>' +
+            (S.store.in10_amount > 0
+              ? '<button class="btn ' + (a && a.in10 ? "primary" : "ghost") + '" data-in10="' + c.id + '" title="10時IN（' +
+                yen(S.store.in10_amount) + '）">' + (a && a.in10 ? "✓ " : "") + "10時IN</button>" : "") +
           "</span></div>";
       }).join("");
 
@@ -433,6 +436,14 @@
       bind("[data-pay]", "pay", payoutDialog);
       bind("[data-adj]", "adj", adjustDialog);
       bind("[data-fix]", "fix", function (id) { attendDialog(id, att[id]); });
+      bind("[data-in10]", "in10", function (id) {
+        var on = !(att[id] && att[id].in10);
+        sb.rpc("night_attendance_in10", { p_cast: id, p_date: d, p_on: on }).then(function (q) {
+          if (q.error) { fail(q.error); return; }
+          toast(on ? "10時IN を付けました" : "10時IN を外しました", "ok");
+          loadAttendance();
+        });
+      });
     });
   }
 
@@ -796,6 +807,8 @@
     var r1 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "nomination"; })[0]) || {};
     var r2 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "sales"; })[0]) || {};
     var r3 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "ratio"; })) || [];
+    var r4 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "ratio_under"; })[0]) || {};
+    var payBase = S.store && S.store.ratio_base === "pay";
     var ratioRows = "";
     for (var ri = 0; ri < 3; ri++) {
       var rr = r3[ri] || {};
@@ -841,9 +854,15 @@
         '<input id="c_s_wage" type="number" min="0" placeholder="3500" style="flex:1" value="' +
           (r2.wage != null ? r2.wage : "") + '"></div></div>' +
       '<div class="field"><label>達成率スライド（達成率% ／ 時給 ／ バック下限%）</label>' +
-        '<div style="color:var(--muted);font-size:11.5px;margin-bottom:6px">達成率 ＝ 個人売上 ÷（基本時給 × 勤務時間）。' +
-        'バック下限は、達成したときにボトルなどのバック率を少なくともその%にします（空欄なら時給だけ）</div>' +
-        ratioRows + '</div>' +
+        '<div style="color:var(--muted);font-size:11.5px;margin-bottom:6px">達成率 ＝ 個人売上 ÷（基本時給 × 勤務時間' +
+        (payBase ? " ＋ バック ＋ 手当 ＋ 同伴 ＋ 10時IN" : "") + '）。' +
+        'バック下限は、達成したときにバック率を少なくともその%にします（空欄なら時給だけ）</div>' +
+        ratioRows +
+        '<div class="row" style="margin-top:4px;align-items:center"><span style="font-size:12.5px">達成率</span>' +
+        '<input id="c_u_under" type="number" min="0" placeholder="50" style="flex:1" value="' + (r4.under != null ? r4.under : "") + '">' +
+        '<span style="font-size:12.5px">% 未満なら時給</span>' +
+        '<input id="c_u_wage" type="number" min="0" placeholder="1500" style="flex:1" value="' + (r4.wage != null ? r4.wage : "") + '"></div>' +
+        '</div>' +
       (c ? '<div class="field"><label for="c_active">状態</label><select id="c_active">' +
         '<option value="1"' + (c.is_active ? " selected" : "") + ">在籍</option>" +
         '<option value="0"' + (!c.is_active ? " selected" : "") + ">退店</option></select></div>" : "") +
@@ -866,6 +885,8 @@
               rules.push(rule);
             }
           }
+          var uu = root.querySelector("#c_u_under").value, uw = root.querySelector("#c_u_wage").value;
+          if (uu !== "" && uw !== "") rules.push({ type: "ratio_under", under: Number(uu), wage: Number(uw) });
 
           var txt = function (id) {
             var v = root.querySelector("#" + id).value.trim();

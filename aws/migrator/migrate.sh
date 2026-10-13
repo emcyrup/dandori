@@ -49,7 +49,14 @@ run_files() {
   fi
   for f in "$@"; do
     echo "== $(basename "$f")"
-    run_sql_file "$f"
+    if ! run_sql_file "$f"; then
+      # 途中で止まっても、外した FORCE RLS と素通りの印は必ず戻す（そのまま API が動くと危ないため）
+      if [ "$DB_MODE" = "single" ]; then
+        echo "!! $(basename "$f") で止まりました。安全のため仕上げ (post-single.sql) だけ流します"
+        $PSQL -q -f "$HERE/post-single.sql" || true
+      fi
+      exit 1
+    fi
   done
   if [ "$DB_MODE" = "single" ]; then
     echo "== 仕上げ (post-single.sql)"

@@ -10,8 +10,14 @@
 --    clock_round       打刻を、この分刻みにそろえる（30 → 出勤は次の 30 分へ、退勤は前の 30 分へ）
 --    pay_withhold_pct  総支給から、成績に関係なく一律で引く %（10 → 総支給 × 10%）
 --    seat_split        卓についたキャストを「指名」として数え、伝票の小計を、ついた人数で均等に分ける
---    table_back_pct    seat_split のとき、卓の商品（ドリンク・同伴など自分のバックが付く明細を除く）の
---                      小計を人数で割ったぶんに付けるバック %（予備バック）
+--    table_back_pct    seat_split のとき、個人売上（小計 ÷ 人数）に付けるバック %（予備バック）。
+--                      達成でバック率が上がれば（wage_rules の back_rate）、その率で払います
+--    ratio_base        達成率の分母。'wage' = 基本時給 × 時間（いままで）
+--                      'pay'  = 基本時給 × 時間 ＋ バック（基本の率）＋ 手当 ＋ 同伴 ＋ 10時IN（給与 Excel と同じ）
+--    in10_amount       「10時IN」1回の手当（円）。出勤の画面で日ごとに付けます
+--
+--  【時給の段階（キャストの wage_rules）】 いままでの {"type":"ratio","from":150,"wage":2500} に加えて
+--    {"type":"ratio_under","under":50,"wage":1500} … 達成率がこれ未満なら、この時給に下げる
 --
 --  【給与の試算に足す列】 gross_amount（総支給）/ withhold（一律控除）/ table_back（予備バック）
 --    deduction（控除）と net_amount（差引支給）は、一律控除を含めた額になります。
@@ -25,6 +31,11 @@ alter table public.store add column if not exists clock_round      integer not n
 alter table public.store add column if not exists pay_withhold_pct numeric not null default 0;
 alter table public.store add column if not exists seat_split       boolean not null default false;
 alter table public.store add column if not exists table_back_pct   numeric not null default 0;
+alter table public.store add column if not exists ratio_base       text    not null default 'wage';
+alter table public.store add column if not exists in10_amount      integer not null default 0;
+
+-- 出勤：「10時IN」を付けた日
+alter table public.night_attendance add column if not exists in10 boolean not null default false;
 
 -- 伝票：端数の調整額（合計 − 丸める前の合計）。画面に「端数調整」として出します
 alter table public.night_visit add column if not exists round_adj integer not null default 0;
@@ -182,7 +193,7 @@ grant execute on function public.night_clock_out(uuid, timestamptz) to authentic
 -- ----------------------------------------------------------------------------
 --  3. 折半（seat_split）：締めた伝票ごとに、小計をついた人数で割ったぶん
 --     sales      … 個人売上（達成率に使う）＝ 小計 ÷ 人数
---     table_base … 予備バックの元 ＝（小計 − ドリンク・同伴・指名の明細）÷ 人数
+--     table_base … 予備バックの元（＝ 個人売上。給与 Excel の「バック ＝ 売上 × 率」と同じ）
 -- ----------------------------------------------------------------------------
 create or replace function app.seat_shares(p_store uuid, p_from date, p_to date)
 returns table (cast_id uuid, business_date date, visit_id uuid, sales numeric, table_base numeric)
@@ -195,22 +206,158 @@ as $$
      where v.store_id = p_store and v.status = 'closed'
        and v.business_date between p_from and p_to
      group by vc.visit_id
-  ),
-  own as (
-    select i.visit_id, coalesce(sum(i.amount), 0) as amt
-      from public.night_visit_item i
-      join n on n.visit_id = i.visit_id
-     where i.category in ('drink', 'douhan', 'nomination')
-     group by i.visit_id
   )
   select vc.cast_id, v.business_date, v.id,
          v.subtotal / n.people,
-         greatest(v.subtotal - coalesce(own.amt, 0), 0) / n.people
+         v.subtotal / n.people
     from public.night_visit_cast vc
     join n on n.visit_id = vc.visit_id
-    join public.night_visit v on v.id = vc.visit_id
-    left join own on own.visit_id = vc.visit_id;
+    join public.night_visit v on v.id = vc.visit_id;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+--  3b. 達成率・時給・バック率（分母に「バック＋手当」を足せる版。ratio_under に対応）
+-- ----------------------------------------------------------------------------
+create or replace function app.achieved_pct(p_cast uuid, p_sales integer, p_minutes integer, p_extra numeric)
+returns integer
+language sql stable security definer set search_path = public, app
+as $$
+  select case
+    when c.hourly_wage * coalesce(p_minutes, 0) / 60.0 + coalesce(p_extra, 0) > 0
+      then floor(coalesce(p_sales, 0) * 100.0 / (c.hourly_wage * coalesce(p_minutes, 0) / 60.0 + coalesce(p_extra, 0)))::integer
+    else 0 end
+  from public.night_cast c where c.id = p_cast;
+$$;
+
+create or replace function app.wage_for(
+  p_cast uuid, p_nominations integer, p_sales integer, p_minutes integer, p_extra numeric
+) returns integer
+language plpgsql stable security definer set search_path = public, app
+as $$
+declare c public.night_cast; rule jsonb; best integer; pct integer; raised boolean := false; low integer;
+begin
+  select * into c from public.night_cast where id = p_cast;
+  if not found then return 0; end if;
+  best := c.hourly_wage;
+  pct  := app.achieved_pct(p_cast, p_sales, p_minutes, p_extra);
+
+  for rule in select * from jsonb_array_elements(coalesce(c.wage_rules, '[]'::jsonb)) loop
+    if (rule->>'type') = 'nomination'
+       and coalesce(p_nominations, 0) >= coalesce((rule->>'from')::integer, 0) then
+      best := greatest(best, coalesce((rule->>'wage')::integer, 0)); raised := true;
+    elsif (rule->>'type') = 'sales'
+       and coalesce(p_sales, 0) >= coalesce((rule->>'from')::integer, 0) then
+      best := greatest(best, coalesce((rule->>'wage')::integer, 0)); raised := true;
+    elsif (rule->>'type') = 'ratio'
+       and pct >= coalesce((rule->>'from')::integer, 0) then
+      best := greatest(best, coalesce((rule->>'wage')::integer, 0)); raised := true;
+    elsif (rule->>'type') = 'ratio_under'
+       and coalesce(p_minutes, 0) > 0
+       and pct < coalesce((rule->>'under')::integer, 0) then
+      low := least(coalesce(low, 2147483647), coalesce((rule->>'wage')::integer, c.hourly_wage));
+    end if;
+  end loop;
+  if low is not null and not raised then best := low; end if;
+  return best;
+end;
+$$;
+
+create or replace function app.wage_for(
+  p_cast uuid, p_nominations integer, p_sales integer, p_minutes integer
+) returns integer
+language sql stable security definer set search_path = public, app
+as $$ select app.wage_for(p_cast, p_nominations, p_sales, p_minutes, 0::numeric); $$;
+
+create or replace function app.back_floor_for(
+  p_cast uuid, p_nominations integer, p_sales integer, p_minutes integer, p_extra numeric
+) returns numeric
+language plpgsql stable security definer set search_path = public, app
+as $$
+declare c public.night_cast; rule jsonb; best numeric := 0; pct integer; hit boolean;
+begin
+  select * into c from public.night_cast where id = p_cast;
+  if not found then return 0; end if;
+  pct := app.achieved_pct(p_cast, p_sales, p_minutes, p_extra);
+
+  for rule in select * from jsonb_array_elements(coalesce(c.wage_rules, '[]'::jsonb)) loop
+    if (rule->>'back_rate') is null then continue; end if;
+    hit := case rule->>'type'
+      when 'nomination' then coalesce(p_nominations, 0) >= coalesce((rule->>'from')::integer, 0)
+      when 'sales'      then coalesce(p_sales, 0)       >= coalesce((rule->>'from')::integer, 0)
+      when 'ratio'      then pct                        >= coalesce((rule->>'from')::integer, 0)
+      else false end;
+    if hit then best := greatest(best, (rule->>'back_rate')::numeric); end if;
+  end loop;
+  return best;
+end;
+$$;
+
+create or replace function app.back_floor_for(
+  p_cast uuid, p_nominations integer, p_sales integer, p_minutes integer
+) returns numeric
+language sql stable security definer set search_path = public, app
+as $$ select app.back_floor_for(p_cast, p_nominations, p_sales, p_minutes, 0::numeric); $$;
+
+-- 達成率の分母に足すぶん（ratio_base = 'pay' の店舗だけ）。給与 Excel の「合計」と同じく
+-- 基本の率のバック（予備バック）＋ 明細のバック（ドリンク・同伴）＋ 手当 ＋ 10時IN
+create or replace function app.ratio_extra(p_cast uuid, p_from date, p_to date)
+returns numeric
+language plpgsql stable security definer set search_path = public, app
+as $$
+declare c public.night_cast; st public.store; v_split boolean; tb numeric := 0; ib numeric := 0; al numeric := 0; i10 numeric := 0;
+begin
+  select * into c from public.night_cast where id = p_cast;
+  if not found then return 0; end if;
+  select * into st from public.store where id = c.store_id;
+  if coalesce(st.ratio_base, 'wage') <> 'pay' then return 0; end if;
+  v_split := coalesce(st.seat_split, false);
+
+  if v_split and coalesce(st.table_back_pct, 0) > 0 then
+    select floor(coalesce(sum(s.table_base), 0) * st.table_back_pct / 100.0) into tb
+      from app.seat_shares(c.store_id, p_from, p_to) s where s.cast_id = p_cast;
+  end if;
+  select coalesce(sum(i.back_amount), 0) into ib
+    from public.night_visit_item i
+    join public.night_visit v on v.id = i.visit_id
+   where i.cast_id = p_cast and v.status = 'closed'
+     and v.business_date between p_from and p_to
+     and (not v_split or i.category in ('drink','douhan','nomination'));
+  select coalesce(sum(j.amount), 0) into al
+    from public.night_adjustment j
+   where j.cast_id = p_cast and j.kind = 'allowance' and j.business_date between p_from and p_to;
+  select count(*) * coalesce(st.in10_amount, 0) into i10
+    from public.night_attendance a
+   where a.cast_id = p_cast and a.in10 and a.business_date between p_from and p_to;
+  return coalesce(tb, 0) + coalesce(ib, 0) + coalesce(al, 0) + coalesce(i10, 0);
+end;
+$$;
+
+-- 出勤の画面から「10時IN」を付け外しする
+create or replace function public.night_attendance_in10(p_cast uuid, p_date date, p_on boolean)
+returns public.night_attendance
+language plpgsql security definer set search_path = public, app
+as $$
+declare me public.staff; c public.night_cast; a public.night_attendance;
+begin
+  select * into me from app.me();
+  if me.id is null then raise exception 'ログインが必要です'; end if;
+  select * into c from public.night_cast where id = p_cast;
+  if not found then raise exception 'キャストが見つかりません'; end if;
+  if not app.can_store(c.store_id) then raise exception 'この店舗を操作する権限がありません'; end if;
+  insert into public.night_attendance(tenant_id, store_id, cast_id, business_date, in10)
+  values (c.tenant_id, c.store_id, c.id, p_date, coalesce(p_on, false))
+  on conflict (cast_id, business_date) do update set in10 = excluded.in10
+  returning * into a;
+  return a;
+end;
+$$;
+
+grant execute on function app.achieved_pct(uuid, integer, integer, numeric) to authenticated;
+grant execute on function app.wage_for(uuid, integer, integer, integer, numeric) to authenticated;
+grant execute on function app.back_floor_for(uuid, integer, integer, integer, numeric) to authenticated;
+grant execute on function app.ratio_extra(uuid, date, date) to authenticated;
+grant execute on function public.night_attendance_in10(uuid, date, boolean) to authenticated;
 
 
 -- ----------------------------------------------------------------------------
@@ -263,7 +410,8 @@ begin
                   then greatest(extract(epoch from (a.clock_out - a.clock_in))::integer / 60, 0)
                   else 0 end), 0)::integer as minutes,
            count(*) filter (where a.clock_in is not null)::integer as days,
-           coalesce(sum(a.late_minutes),0)::integer as late
+           coalesce(sum(a.late_minutes),0)::integer as late,
+           (count(*) filter (where a.in10) * coalesce(st.in10_amount, 0))::integer as in10
       from public.night_attendance a
      where a.store_id = p_store and a.business_date between p_from and p_to
      group by a.cast_id
@@ -318,9 +466,10 @@ begin
            case when v_split then round(coalesce(s.sales,0))::integer else coalesce(p.sales,0) end as sales,
            coalesce(s.tbase,0)   as tbase,
            coalesce(p.back,0)    as back,
-           coalesce(j.allw,0)    as allw,
+           coalesce(j.allw,0) + coalesce(a.in10,0) as allw,
            coalesce(j.dedu,0)    as dedu,
-           coalesce(y.adv,0)     as adv
+           coalesce(y.adv,0)     as adv,
+           app.ratio_extra(c.id, p_from, p_to) as extra
       from public.night_cast c
       left join att  a on a.cast_id = c.id
       left join perf p on p.cast_id = c.id
@@ -332,9 +481,9 @@ begin
   ),
   calc as (
     select b.*,
-           app.wage_for(b.id, b.noms, b.sales, b.minutes)       as hourly,
-           app.achieved_pct(b.id, b.sales, b.minutes)           as pct,
-           app.back_floor_for(b.id, b.noms, b.sales, b.minutes) as fl
+           app.wage_for(b.id, b.noms, b.sales, b.minutes, b.extra)       as hourly,
+           app.achieved_pct(b.id, b.sales, b.minutes, b.extra)           as pct,
+           app.back_floor_for(b.id, b.noms, b.sales, b.minutes, b.extra) as fl
       from base b
   ),
   bonus as (
@@ -421,7 +570,7 @@ returns table (
 language plpgsql stable security definer set search_path = public, app
 as $$
 #variable_conflict use_column
-declare c public.night_cast; st public.store; v_split boolean;
+declare c public.night_cast; st public.store; v_split boolean; v_extra numeric;
         v_hourly integer; v_noms integer; v_sales integer; v_minutes integer; v_floor numeric; v_trate numeric;
 begin
   select * into c from public.night_cast where id = p_cast;
@@ -453,8 +602,9 @@ begin
     from public.night_attendance a
    where a.cast_id = p_cast and a.business_date between p_from and p_to;
 
-  v_hourly := app.wage_for(p_cast, coalesce(v_noms, 0), coalesce(v_sales, 0), v_minutes);
-  v_floor  := app.back_floor_for(p_cast, coalesce(v_noms, 0), coalesce(v_sales, 0), v_minutes);
+  v_extra  := app.ratio_extra(p_cast, p_from, p_to);
+  v_hourly := app.wage_for(p_cast, coalesce(v_noms, 0), coalesce(v_sales, 0), v_minutes, v_extra);
+  v_floor  := app.back_floor_for(p_cast, coalesce(v_noms, 0), coalesce(v_sales, 0), v_minutes, v_extra);
   v_trate  := case when v_split and coalesce(st.table_back_pct, 0) > 0
                    then greatest(st.table_back_pct, v_floor) else 0 end;
 
@@ -466,6 +616,7 @@ begin
   att as (
     select a.business_date as bd,
            a.clock_in, a.clock_out, a.late_minutes, a.note,
+           (case when a.in10 then coalesce(st.in10_amount, 0) else 0 end)::integer as in10,
            case when a.clock_in is not null and a.clock_out is not null
                 then greatest(extract(epoch from (a.clock_out - a.clock_in))::integer / 60, 0)
                 else 0 end as mins
@@ -526,7 +677,7 @@ begin
     case when v_split then round(coalesce(s.sales, 0))::integer else coalesce(p.sales, 0) end,
     (coalesce(p.back, 0) + floor(coalesce(s.tbase, 0) * v_trate / 100.0))::integer,
     coalesce(y.adv, 0),
-    coalesce(j.allw, 0), coalesce(j.dedu, 0),
+    coalesce(j.allw, 0) + coalesce(a.in10, 0), coalesce(j.dedu, 0),
     a.note
   from days d
   left join att  a on a.bd = d.bd

@@ -145,9 +145,9 @@ on conflict (tenant_id) do nothing;
 --    ・打刻は 30 分単位（出勤は次の 30 分、退勤は前の 30 分）
 --    ・給与は総支給から一律 10% を控除
 --    ・卓についたキャストを「指名」として数え、伝票の小計をついた人数で均等に分ける（折半）
---    ・予備バック 10% は、卓の商品（ドリンク・同伴を除く）を人数で割ったぶんに付ける
+--    ・予備バック 10% は、個人売上（小計を人数で割ったぶん）に付ける（10-14 に Excel に合わせて変更）
 --      → セット・ソーダ・ピッチャー・ボトル・シャンパンの明細ごとのバックは 0 にする（二重払いを防ぐ）
---      → ドリンク 25%・同伴 2,000 円は、これまでどおり「誰にバックを付けますか？」で選んだ人に付く
+--      → ドリンク 25%・同伴 2,000 円は、これまでどおり「誰にバックを付けますか？」で選んだ人に付く（Excel の「その他」「同伴」）
 -- ----------------------------------------------------------------------------
 update public.store
    set bill_round = 1000, clock_round = 30, pay_withhold_pct = 10,
@@ -158,3 +158,25 @@ update public.night_menu
    set back_rate = 0, back_amount = 0
  where store_id in (select id from public.store where name = 'Olivia')
    and category in ('set', 'extension', 'food', 'other', 'bottle');
+
+
+-- ----------------------------------------------------------------------------
+--  2026-10-14 給与 Excel に合わせる（ただし 200% 以上のバック 20% は、Excel と違い実際に 20% で払う）
+--    ・達成率 ＝ 個人売上 ÷（基本時給 × 時間 ＋ バック10% ＋ その他 ＋ 同伴 ＋ 10時IN）
+--    ・時給：50% 未満 1,500 ／ 50% 以上 2,000 ／ 150% 以上 2,500 ／ 300% 以上 3,000
+--    ・バック：個人売上 × 10%（200% 以上は 20%）
+--    ・10時IN：1 回 1,000 円（出勤の画面で日ごとに付ける）
+-- ----------------------------------------------------------------------------
+update public.store set ratio_base = 'pay', in10_amount = 1000 where name = 'Olivia';
+
+-- 前の段階（150/200/300）のままの人、まだ何も設定していない人だけ置きかえる（個別に変えた人はそのまま）
+update public.night_cast
+   set wage_rules = '[{"type":"ratio_under","under":50,"wage":1500},
+                      {"type":"ratio","from":150,"wage":2500},
+                      {"type":"ratio","from":200,"wage":2500,"back_rate":20},
+                      {"type":"ratio","from":300,"wage":3000,"back_rate":20}]'::jsonb
+ where store_id in (select id from public.store where name = 'Olivia')
+   and (wage_rules = '[]'::jsonb
+        or wage_rules = '[{"type":"ratio","from":150,"wage":2500},
+                          {"type":"ratio","from":200,"wage":2500,"back_rate":20},
+                          {"type":"ratio","from":300,"wage":3000,"back_rate":20}]'::jsonb);

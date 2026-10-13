@@ -104,7 +104,17 @@
             </select></div>
           <div class="field" style="flex:1"><label for="s_tableback">予備バック（%）</label>
             <input id="s_tableback" type="number" min="0" max="100" step="0.5" inputmode="decimal">
-            <span style="font-size:12px;color:var(--muted)">「均等に分ける」のとき、ドリンク・同伴以外の小計の取り分に付けます</span></div>
+            <span style="font-size:12px;color:var(--muted)">「均等に分ける」のとき、個人売上（小計の取り分）に付けます</span></div>
+        </div>
+
+        <div class="row">
+          <div class="field" style="flex:1"><label for="s_ratiobase">達成率の分母</label>
+            <select id="s_ratiobase">
+              <option value="wage">基本時給 × 勤務時間</option>
+              <option value="pay">基本時給 × 勤務時間 ＋ バック ＋ 手当 ＋ 同伴 ＋ 10時IN（給与 Excel と同じ）</option>
+            </select></div>
+          <div class="field" style="flex:1"><label for="s_in10">10時IN の手当（円／回。0 なら使わない）</label>
+            <input id="s_in10" type="number" min="0" inputmode="numeric"></div>
         </div>
 
         <div class="field">
