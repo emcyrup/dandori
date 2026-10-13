@@ -117,9 +117,20 @@ main{padding:14px; max-width:1080px; margin:0 auto}
 .totals div.grand span:last-child{color:var(--gold)}
 
 /* ---- モーダル ---- */
-.modal{position:fixed; inset:0; z-index:40; background:rgba(4,8,12,.72);
+.modal{position:fixed; inset:0; z-index:50; background:rgba(4,8,12,.72);
   display:flex; align-items:center; justify-content:center; padding:18px}
 .modal .box:has(#d_table), .modal .box:has(.ps-detail){max-width:1020px}
+.modal .box:has(.sg-grid){max-width:min(1400px, 96vw)}
+/* シフトの一覧（だれが・どの日に） */
+.sg-grid{border-collapse:collapse; font-size:12px; white-space:nowrap}
+.sg-grid th, .sg-grid td{border:1px solid var(--line); padding:4px 6px; text-align:center; vertical-align:top}
+.sg-grid th.nm, .sg-grid td.nm{text-align:left; position:sticky; left:0; background:var(--panel); z-index:1}
+.sg-grid .sun{color:var(--bad)} .sg-grid .sat{color:#4a7fd0}
+.sg-grid td.ok{background:rgba(63,169,122,.16)} .sg-grid td.want{background:rgba(201,166,90,.22)}
+.sg-grid td.ng{color:var(--muted)}
+.sg-grid small{display:block; color:var(--muted); font-size:10.5px}
+.sg-grid tfoot td{font-weight:700}
+@media print{ .sg-grid{font-size:10px} }
 .modal .box{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
   padding:22px; width:100%; max-width:420px; max-height:90vh; overflow:auto}
 .modal h2{font-size:17px; margin:0 0 16px}

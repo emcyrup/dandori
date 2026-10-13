@@ -203,7 +203,7 @@
       sb.from("night_cast").select("id,name").eq("store_id", S.store.id).eq("is_active", true).order("name"),
       sb.from("night_menu").select("*").eq("store_id", S.store.id).eq("is_active", true)
         .order("sort_order"),
-      sb.from("night_customer").select("id,name,visit_count").eq("store_id", S.store.id)
+      sb.from("night_customer").select("id,name,kana,tel,visit_count").eq("store_id", S.store.id)
         .eq("is_blocked", false).order("name")
     ]).then(function (r) {
       S.casts = (r[0].data) || [];
@@ -270,43 +270,114 @@
       });
   }
 
+  /*  お客様を名前・ふりがな・電話で探します（500 人いても、打った文字で絞り込み）。
+      ひらがな・カタカナ・大文字小文字・空白の違いは見ません。 */
+  function normName(s) {
+    return String(s || "").replace(/[\s　]/g, "").replace(/(様|さま|さん)$/, "").toLowerCase()
+      .replace(/[\u30a1-\u30f6]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+  }
+  function findCustomers(q, limit) {
+    var n = normName(q);
+    if (!n) return [];
+    var digits = String(q).replace(/[^0-9]/g, "");
+    var hit = [];
+    for (var i = 0; i < S.customers.length && hit.length < (limit || 8); i++) {
+      var c = S.customers[i];
+      if (normName(c.name).indexOf(n) >= 0 || normName(c.kana).indexOf(n) >= 0 ||
+          (digits.length >= 3 && String(c.tel || "").replace(/[^0-9]/g, "").indexOf(digits) >= 0)) {
+        hit.push(c);
+      }
+    }
+    return hit;
+  }
+
   function openVisitDialog() {
+    var picked = null;      // えらんだ既存のお客様
+    var seats = [];         // ついたキャスト（何人でも）
     modal(
       "<h2>卓を開く</h2>" +
       '<div class="field"><label for="m_table">卓番</label>' +
         '<input id="m_table" placeholder="A-1"></div>' +
-      '<div class="field"><label for="m_cust">お客様</label><select id="m_cust">' +
-        '<option value="">（新規・名前だけ入れる）</option>' +
-        S.customers.map(function (c) {
-          return '<option value="' + c.id + '">' + esc(c.name) + "（" + c.visit_count + "回）</option>";
-        }).join("") + "</select></div>" +
-      '<div class="field"><label for="m_guest">お名前（新規のとき）</label>' +
-        '<input id="m_guest" placeholder="山本様"></div>' +
+      '<div class="field"><label for="m_guest">お客様（名前・ふりがな・電話の一部で探せます。新規はそのまま入力）</label>' +
+        '<input id="m_guest" placeholder="山本様" autocomplete="off">' +
+        '<div id="m_hits" class="menu-grid" style="margin-top:6px"></div>' +
+        '<div id="m_picked" style="margin-top:6px;font-size:13px"></div></div>' +
       '<div class="field"><label for="m_head">人数</label>' +
         '<input id="m_head" type="number" min="1" value="1" inputmode="numeric"></div>' +
-      '<div class="field"><label for="m_cast">ついたキャスト（あとから伝票で何人でも足せます）</label><select id="m_cast">' +
-        '<option value="">（まだ決まっていない）</option>' +
-        S.casts.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + "</option>"; }).join("") +
-        "</select></div>" +
+      '<div class="field"><label>ついたキャスト（何人でも選べます。あとから伝票でも足せます）</label>' +
+        '<div class="row" id="m_casts" style="flex-wrap:wrap;gap:6px">' +
+        S.casts.map(function (c) {
+          return '<button type="button" class="chip" data-c="' + c.id + '">' + esc(c.name) + "</button>";
+        }).join("") + "</div></div>" +
       '<div class="row" style="margin-top:16px">' +
         '<button class="btn ghost" id="m_cancel">やめる</button>' +
         '<button class="btn primary" id="m_ok" style="flex:1">開く</button></div>',
       function (root) {
+        var gIn = root.querySelector("#m_guest");
+        var hits = root.querySelector("#m_hits");
+        var pk = root.querySelector("#m_picked");
+
+        function showPicked() {
+          pk.innerHTML = picked
+            ? '<span class="tag settled" style="font-size:13px;padding:6px 10px">' + esc(picked.name) +
+              "（来店 " + picked.visit_count + " 回）" +
+              ' <button type="button" id="m_unpick" style="border:0;background:none;color:inherit;font-weight:700;cursor:pointer">×</button></span>'
+            : (gIn.value.trim() ? '<span style="color:var(--muted)">新規のお客様として開きます</span>' : "");
+          var un = root.querySelector("#m_unpick");
+          if (un) un.addEventListener("click", function () { picked = null; gIn.value = ""; showPicked(); gIn.focus(); });
+        }
+        function search() {
+          if (picked && gIn.value.trim() !== picked.name) picked = null;
+          var list = picked ? [] : findCustomers(gIn.value, 8);
+          hits.innerHTML = list.map(function (c) {
+            return '<button type="button" class="menu-btn" data-cu="' + c.id + '"><b>' + esc(c.name) + "</b>" +
+              "<span>" + esc(c.kana || "") + "　" + c.visit_count + "回</span></button>";
+          }).join("");
+          Array.prototype.forEach.call(hits.querySelectorAll("button[data-cu]"), function (b) {
+            b.addEventListener("click", function () {
+              picked = S.customers.filter(function (c) { return c.id === b.dataset.cu; })[0] || null;
+              if (picked) gIn.value = picked.name;
+              hits.innerHTML = "";
+              showPicked();
+            });
+          });
+          showPicked();
+        }
+        gIn.addEventListener("input", search);
+
+        Array.prototype.forEach.call(root.querySelectorAll("#m_casts .chip"), function (b) {
+          b.addEventListener("click", function () {
+            var id = b.dataset.c, at = seats.indexOf(id);
+            if (at >= 0) seats.splice(at, 1); else seats.push(id);
+            b.classList.toggle("on", at < 0);
+          });
+        });
+
         root.querySelector("#m_cancel").addEventListener("click", closeModal);
         root.querySelector("#m_ok").addEventListener("click", function () {
           var btn = this; btn.disabled = true;
+          var name = gIn.value.trim();
           sb.rpc("night_open_visit", {
             p_store: S.store.id,
             p_table_no: root.querySelector("#m_table").value.trim() || null,
-            p_customer: root.querySelector("#m_cust").value || null,
-            p_guest_name: root.querySelector("#m_guest").value.trim() || null,
+            p_customer: picked ? picked.id : null,
+            p_guest_name: picked ? null : (name || null),
             p_head_count: Number(root.querySelector("#m_head").value) || 1,
-            p_cast: root.querySelector("#m_cast").value || null
+            p_cast: seats[0] || null
           }).then(function (q) {
-            btn.disabled = false;
-            if (q.error) { fail(q.error); return; }
-            closeModal();
-            openTicket(q.data.id);
+            if (q.error) { btn.disabled = false; fail(q.error); return; }
+            var vid = q.data.id;
+            // 2人目からは、卓についた人として足します（1人目は開くときに付いています）
+            var rest = seats.slice(1);
+            var chain = Promise.resolve();
+            rest.forEach(function (cid) {
+              chain = chain.then(function () {
+                return sb.rpc("night_visit_cast_add", { p_visit: vid, p_cast: cid }).then(function (r) {
+                  if (r.error) fail(r.error);
+                });
+              });
+            });
+            chain.then(function () { closeModal(); openTicket(vid); });
           });
         });
         root.querySelector("#m_table").focus();
@@ -394,6 +465,8 @@
       "<div><span>サービス料 " + Number(S.store.service_rate) + "%</span><span class='mono'>" + yen(v.service_charge) + "</span></div>" +
       "<div><span>消費税</span><span class='mono'>" + yen(v.tax) + "</span></div>" +
       (v.discount ? "<div><span>値引き</span><span class='mono'>-" + yen(v.discount) + "</span></div>" : "") +
+      (v.round_adj ? "<div><span>端数調整（千円単位）</span><span class='mono'>" + (v.round_adj > 0 ? "+" : "-") +
+        yen(Math.abs(v.round_adj)) + "</span></div>" : "") +
       "<div class='grand'><span>合計</span><span class='mono'>" + yen(v.total) + "</span></div>";
 
     $("payBtn").disabled = !S.items.length;

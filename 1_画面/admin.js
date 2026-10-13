@@ -182,6 +182,11 @@
     $("s_tax").value = Number(s.tax_rate);
     $("s_incl").value = s.tax_included ? "1" : "0";
     $("s_minwage").value = s.min_wage || 0;
+    $("s_billround").value = String(s.bill_round || 0);
+    $("s_clockround").value = String(s.clock_round || 0);
+    $("s_withhold").value = Number(s.pay_withhold_pct || 0);
+    $("s_split").value = s.seat_split ? "1" : "0";
+    $("s_tableback").value = Number(s.table_back_pct || 0);
     $("s_theme").value = s.ui_theme || "standard";
     updateHint();
   }
@@ -210,6 +215,11 @@
       tax_rate: Number($("s_tax").value) || 0,
       tax_included: $("s_incl").value === "1",
       min_wage: Number($("s_minwage").value) || 0,
+      bill_round: Number($("s_billround").value) || 0,
+      clock_round: Number($("s_clockround").value) || 0,
+      pay_withhold_pct: Number($("s_withhold").value) || 0,
+      seat_split: $("s_split").value === "1",
+      table_back_pct: Number($("s_tableback").value) || 0,
       ui_theme: $("s_theme").value
     }).eq("id", S.store.id).then(function (q) {
       btn.disabled = false;

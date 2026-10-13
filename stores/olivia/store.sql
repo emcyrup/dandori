@@ -41,8 +41,8 @@ begin
 
   -- ---- Price List
   insert into public.night_menu(tenant_id, store_id, category, name, unit_price, back_amount, back_rate, sort_order) values
-    (t_id, s_id, 'set',    'セット（無制限・ボトルキープ）※混雑時90分制', 6000, 0, 10, 10),
-    (t_id, s_id, 'set',    'セット（60分・飲み放題）',                    5000, 0, 10, 11),
+    (t_id, s_id, 'set',    'セット（無制限・ボトルキープ）※混雑時90分制', 6000, 0,  0, 10),
+    (t_id, s_id, 'set',    'セット（60分・飲み放題）',                    5000, 0,  0, 11),
     (t_id, s_id, 'douhan', '同伴',                                       2000, 2000, 0, 40),
   -- ---- Drink（キャストに付くドリンクは小計の 25%）
     (t_id, s_id, 'drink',  'キャストドリンク',  2000, 0, 25, 50),
@@ -51,8 +51,8 @@ begin
     (t_id, s_id, 'drink',  'コカボム',          3000, 0, 25, 53),
     (t_id, s_id, 'drink',  'すらっと 各種',     1500, 0, 25, 54),
     (t_id, s_id, 'drink',  'チャミスル',        3000, 0, 25, 55),
-    (t_id, s_id, 'other',  'ソーダ',             500, 0, 10, 90),
-    (t_id, s_id, 'other',  'ピッチャー',        1000, 0, 10, 91),
+    (t_id, s_id, 'other',  'ソーダ',             500, 0,  0, 90),
+    (t_id, s_id, 'other',  'ピッチャー',        1000, 0,  0, 91),
   -- ---- Bottle（小計の 10%）
     (t_id, s_id, 'bottle', '吉四六',                    10000, 0, 10, 100),
     (t_id, s_id, 'bottle', '壱岐ゴールド',              10000, 0, 10, 101),
@@ -120,14 +120,10 @@ update public.night_cast
 
 -- ----------------------------------------------------------------------------
 --  2026-10-03 の追加（すでに Olivia が入っている環境にも効くように、ここで直す）
---    ・予備バック：卓についた際のそのほかの商品（セット・ソーダ・ピッチャー）に 10%
+--    ・予備バック 10%：卓についた際の商品（10-13 から、卓の小計の折半ぶんに付ける）
 --    ・同伴の料金を 2,000円に
 -- ----------------------------------------------------------------------------
-update public.night_menu
-   set back_rate = 10
- where store_id in (select id from public.store where name = 'Olivia')
-   and category in ('set', 'extension', 'food', 'other')
-   and back_rate = 0 and back_amount = 0;
+-- （予備バックは 2026-10-13 から、明細ごとではなく卓の小計の折半ぶんに付けます。下の 10-13 の取り決めを参照）
 
 update public.night_menu
    set unit_price = 2000
@@ -141,3 +137,24 @@ update public.night_menu
 insert into public.tenant_ai(tenant_id, ai_provider)
 select id, 'claude' from public.tenant where name = 'Olivia'
 on conflict (tenant_id) do nothing;
+
+
+-- ----------------------------------------------------------------------------
+--  2026-10-13 の取り決め（032_olivia_rules.sql の店舗設定）
+--    ・会計は〇万〇千円にそろえる（百円台が 500 以上は切り上げ、未満は切り下げ）
+--    ・打刻は 30 分単位（出勤は次の 30 分、退勤は前の 30 分）
+--    ・給与は総支給から一律 10% を控除
+--    ・卓についたキャストを「指名」として数え、伝票の小計をついた人数で均等に分ける（折半）
+--    ・予備バック 10% は、卓の商品（ドリンク・同伴を除く）を人数で割ったぶんに付ける
+--      → セット・ソーダ・ピッチャー・ボトル・シャンパンの明細ごとのバックは 0 にする（二重払いを防ぐ）
+--      → ドリンク 25%・同伴 2,000 円は、これまでどおり「誰にバックを付けますか？」で選んだ人に付く
+-- ----------------------------------------------------------------------------
+update public.store
+   set bill_round = 1000, clock_round = 30, pay_withhold_pct = 10,
+       seat_split = true, table_back_pct = 10
+ where name = 'Olivia';
+
+update public.night_menu
+   set back_rate = 0, back_amount = 0
+ where store_id in (select id from public.store where name = 'Olivia')
+   and category in ('set', 'extension', 'food', 'other', 'bottle');

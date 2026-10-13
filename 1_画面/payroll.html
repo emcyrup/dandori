@@ -45,6 +45,7 @@
     <button role="tab" data-view="month" data-boss="1"  aria-selected="false">月別</button>
     <button role="tab" data-view="cast"   aria-selected="false">キャスト設定</button>
     <button role="tab" data-view="roster" aria-selected="false">名簿</button>
+    <button role="tab" data-view="xl" data-boss="1" aria-selected="false">過去給与と照合</button>
   </nav>
 
   <main>
@@ -88,6 +89,37 @@
         <div class="scroll"><table class="list" id="payTable"></table></div>
         <div class="empty hidden" id="payEmpty">期間を選んで「試算する」を押してください。</div>
         <div class="row" style="margin-top:14px" id="payActions"></div>
+      </div>
+    </section>
+
+    <!-- ---------- 過去給与と照合（Excel） ---------- -->
+    <section id="view-xl" class="hidden">
+      <div class="panel">
+        <h2>これまでの給与 Excel と、このツールの計算を比べる</h2>
+        <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">
+          いつもの給与の Excel（「総合計」のシートがあるもの）をえらぶと、キャストごとに
+          Excel の数字と、このツールで同じ期間を計算した数字を並べます。どちらも保存はしません。
+        </p>
+        <div class="row" style="margin-bottom:6px;flex-wrap:wrap">
+          <label class="field" style="margin:0">
+            <span style="font-size:12px;color:var(--muted)">Excel（.xlsx）</span>
+            <input id="xlFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          </label>
+          <label class="field" style="margin:0">
+            <span style="font-size:12px;color:var(--muted)">開始</span>
+            <input id="xlFrom" type="date">
+          </label>
+          <label class="field" style="margin:0">
+            <span style="font-size:12px;color:var(--muted)">終了</span>
+            <input id="xlTo" type="date">
+          </label>
+          <button class="btn primary" id="xlGo" style="margin-top:18px">比べる</button>
+        </div>
+        <div id="xlInfo" style="font-size:12.5px;color:var(--muted)"></div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h2>くらべた結果</h2>
+        <div id="xlOut"><div class="empty">Excel をえらんで「比べる」を押してください。</div></div>
       </div>
     </section>
 
@@ -181,6 +213,7 @@
 <script src="ui.js"></script>
 <script src="pw.js"></script>
 <script src="perm.js"></script>
+<script src="xlsx.js"></script>
 <script src="payroll.js"></script>
 <script src="menu.js"></script>
 </body>

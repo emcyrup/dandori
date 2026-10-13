@@ -408,6 +408,54 @@
         });
     });
   });
+  /*  出勤の一覧：シフトが出そろったら、だれが・どの日に・何時からを1枚で見る。
+      ○ 入れる／◎ 入りたい／× 休み、その下に希望の時間。打刻があれば「実」の時刻も出します。 */
+  $("pGrid").addEventListener("click", function () {
+    var p = curPeriod();
+    if (!p) return;
+    K.rpc("wish_grid", { p_period: p.id }).then(function (rows) {
+      rows = rows || [];
+      var days = [];
+      for (var d = new Date(p.period_from + "T00:00:00"); K.ymd(d) <= p.period_to; d.setDate(d.getDate() + 1)) {
+        days.push(K.ymd(d));
+      }
+      var mark = { ok: "○", want: "◎", ng: "×" };
+      var cnt = days.map(function () { return 0; });
+      var body = rows.map(function (r) {
+        var dd = r.days || {}, n = 0;
+        var cells = days.map(function (day, i) {
+          var x = dd[day];
+          if (!x) return "<td></td>";
+          var on = x.kind === "ok" || x.kind === "want";
+          if (on) { cnt[i]++; n++; }
+          return "<td class='" + (x.kind || "") + "'>" + (mark[x.kind] || "") +
+            (x.from ? "<small>" + x.from + (x.to ? "-" + x.to : "") + "</small>" : "") +
+            (x["in"] ? "<small>実 " + x["in"] + (x.out ? "-" + x.out : "") + "</small>" : "") + "</td>";
+        }).join("");
+        return "<tr><td class='nm'>" + esc(r.name) + " <small>" + esc(r.status_label) + "・" + n + "日</small></td>" + cells + "</tr>";
+      }).join("");
+      var head = days.map(function (day) {
+        var w = new Date(day + "T00:00:00").getDay();
+        return "<th class='" + (w === 0 ? "sun" : w === 6 ? "sat" : "") + "'>" + Number(day.slice(8)) +
+          "<small>" + K.DOW[w] + "</small></th>";
+      }).join("");
+      K.modal("<h2 style='margin-top:0'>出勤の一覧　" + K.md(p.period_from) + "〜" + K.md(p.period_to) + "</h2>" +
+        "<p style='color:var(--muted);font-size:12px;margin:-6px 0 10px'>○ 入れる　◎ 入りたい　× 休み　／　" +
+        "小さい字は希望の時間、「実」は実際の打刻</p>" +
+        "<div class='tablewrap' style='overflow:auto;max-height:70vh'><table class='sg-grid'>" +
+        "<thead><tr><th class='nm'>名前</th>" + head + "</tr></thead><tbody>" + body + "</tbody>" +
+        "<tfoot><tr><td class='nm'>人数</td>" + cnt.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr></tfoot>" +
+        "</table></div>" +
+        "<div class='row' style='justify-content:flex-end;margin-top:16px;gap:8px'>" +
+        "<button class='btn ghost' id='f_print'>印刷</button>" +
+        "<button class='btn primary' id='f_no'>とじる</button></div>",
+        function (root) {
+          root.querySelector("#f_no").addEventListener("click", K.closeModal);
+          root.querySelector("#f_print").addEventListener("click", function () { window.print(); });
+        });
+    });
+  });
+
   $("pCount").addEventListener("click", function () {
     var p = curPeriod();
     if (!p) return;

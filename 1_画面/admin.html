@@ -78,6 +78,35 @@
           </select>
         </div>
 
+        <div class="row">
+          <div class="field" style="flex:1"><label for="s_billround">お会計の端数</label>
+            <select id="s_billround">
+              <option value="0">そのまま（1円単位）</option>
+              <option value="100">百円単位（50円以上は切り上げ）</option>
+              <option value="1000">千円単位（500円以上は切り上げ）</option>
+            </select></div>
+          <div class="field" style="flex:1"><label for="s_clockround">打刻の単位</label>
+            <select id="s_clockround">
+              <option value="0">1分単位（押した時刻）</option>
+              <option value="15">15分単位</option>
+              <option value="30">30分単位</option>
+            </select>
+            <span style="font-size:12px;color:var(--muted)">出勤は次の区切り、退勤は前の区切りにそろえます（21:10 出勤 → 21:30）</span></div>
+        </div>
+
+        <div class="row">
+          <div class="field" style="flex:1"><label for="s_withhold">給与の一律控除（総支給の %）</label>
+            <input id="s_withhold" type="number" min="0" max="100" step="0.1" inputmode="decimal"></div>
+          <div class="field" style="flex:1"><label for="s_split">指名と個人売上の数え方</label>
+            <select id="s_split">
+              <option value="0">指名は料金マスタの「指名」、売上はバックを付けた人に</option>
+              <option value="1">卓についた人＝指名。伝票の小計をついた人数で均等に分ける</option>
+            </select></div>
+          <div class="field" style="flex:1"><label for="s_tableback">予備バック（%）</label>
+            <input id="s_tableback" type="number" min="0" max="100" step="0.5" inputmode="decimal">
+            <span style="font-size:12px;color:var(--muted)">「均等に分ける」のとき、ドリンク・同伴以外の小計の取り分に付けます</span></div>
+        </div>
+
         <div class="field">
           <label for="s_minwage">地域の最低賃金（円／時）</label>
           <input id="s_minwage" type="number" min="0" inputmode="numeric">

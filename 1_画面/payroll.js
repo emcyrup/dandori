@@ -179,7 +179,8 @@
         /*  指名のメニューが無いお店（Olivia など）では、画面から「指名」を隠します。 */
         return sb.from("night_menu").select("id").eq("store_id", S.store.id)
           .eq("category", "nomination").eq("is_active", true).limit(1)
-          .then(function (q) { S.useNom = !!(q.data && q.data.length); }, function () { S.useNom = true; });
+          .then(function (q) { S.useNom = !!(q.data && q.data.length) || !!S.store.seat_split; },
+                function () { S.useNom = true; });
       });
   }
 
@@ -190,7 +191,7 @@
   });
 
   function switchView(v) {
-    ["attend", "calc", "slip", "month", "cast", "roster"].forEach(function (n) {
+    ["attend", "calc", "slip", "month", "cast", "roster", "xl"].forEach(function (n) {
       $("view-" + n).classList.toggle("hidden", n !== v);
     });
     Array.prototype.forEach.call(document.querySelectorAll("nav.tabs button"), function (b) {
@@ -201,6 +202,188 @@
     if (v === "roster") loadRoster();
     if (v === "slip") { if (!$("slipYm").value) $("slipYm").value = ymd(new Date()).slice(0, 7); loadSlips(); }
     if (v === "month") loadMonthly(12);
+    if (v === "xl") xlInit();
+  }
+
+  function nomLabel() { return S.store && S.store.seat_split ? "指名" : "本指名"; }
+
+  /* ------------------------------------------------- 過去給与と照合（Excel） */
+
+  var XL = null;   // 読みこんだ Excel（キャストごとの数字）
+
+  function xlInit() {
+    if (!$("xlFrom").value) $("xlFrom").value = $("pFrom").value || "";
+    if (!$("xlTo").value) $("xlTo").value = $("pTo").value || "";
+  }
+
+  $("xlFile").addEventListener("change", function () {
+    var f = this.files && this.files[0];
+    XL = null;
+    $("xlInfo").textContent = "";
+    if (!f) return;
+    $("xlInfo").textContent = "読みこんでいます…";
+    window.DANDORI_XLSX.read(f).then(function (book) {
+      XL = xlPick(book);
+      if (!XL.casts.length) {
+        $("xlInfo").textContent = "「総合計」のシートに、キャストの名前が見つかりませんでした。";
+        return;
+      }
+      if (XL.from) $("xlFrom").value = XL.from;
+      if (XL.to) $("xlTo").value = XL.to;
+      $("xlInfo").textContent = f.name + "：" + XL.casts.length + "名（" +
+        XL.casts.map(function (c) { return c.name; }).join("・") + "）" +
+        (XL.from ? "。期間は Excel の日付から " + XL.from + "〜" + XL.to + " にしました（直せます）" : "");
+    }, function (e) {
+      $("xlInfo").textContent = String(e && e.message || e);
+    });
+  });
+
+  /*  Excel から、キャストごとの数字を取りだします。
+      「総合計」シートのA列の見出し（時給・時間・支払い時給・売り上げ・バック・その他・同伴・10時IN・対象額・支給額・％）で
+      行を探すので、行がずれていても読めます。見出しが2回出てくるものは、下（スライド後）の行を使います。 */
+  function xlPick(book) {
+    var out = { casts: [], from: null, to: null };
+    var sum = book.find(/総合計/);
+    if (!sum) return out;
+    var labels = {}, firstPct = null;
+    sum.rows.forEach(function (r) {
+      var a = String(sum.cell(r, 1) == null ? "" : sum.cell(r, 1)).trim();
+      if (!a) return;
+      if (a === "％" && firstPct == null) firstPct = r;
+      labels[a] = r;                      // 同じ見出しは、下の行で上書き
+    });
+    var nameRow = null;
+    sum.rows.some(function (r) { if (String(sum.cell(r, 1)).trim() === "名前") { nameRow = r; return true; } return false; });
+    if (!nameRow) return out;
+    var num = function (r, c) { var v = r == null ? null : sum.cell(r, c); return typeof v === "number" ? v : Number(v) || 0; };
+
+    // 同伴・組数（指名）の本数
+    var cnt = {};
+    var ds = book.find(/同伴/);
+    if (ds) {
+      var head = null;
+      ds.rows.some(function (r) { if (String(ds.cell(r, 1)).trim() === "名前") { head = r; return true; } return false; });
+      if (head) {
+        ds.rows.forEach(function (r) {
+          if (r <= head) return;
+          var nm = String(ds.cell(r, 1) == null ? "" : ds.cell(r, 1)).trim();
+          if (!nm || /^\d+$/.test(nm) || nm === "合計") return;
+          var c = { douhan: 0, kumi: 0 };
+          for (var col = 2; col <= ds.maxCol; col++) {
+            var h = String(ds.cell(head, col) == null ? "" : ds.cell(head, col)).trim();
+            var v = Number(ds.cell(r, col)) || 0;
+            if (h === "同伴" && v === 1) c.douhan += 1;
+            if (h === "組数") c.kumi += v;
+          }
+          cnt[nm] = c;
+        });
+        // 期間：見出しの上の行にある日付（Excel の日付の数字）
+        var dates = [];
+        for (var col2 = 2; col2 <= ds.maxCol; col2++) {
+          var d = ds.cell(1, col2);
+          if (typeof d === "number" && d > 40000 && d < 80000) dates.push(d);
+        }
+        if (dates.length) {
+          var toYmd = function (n) { var t = new Date(Math.round((n - 25569) * 86400000)); return t.toISOString().slice(0, 10); };
+          out.from = toYmd(Math.min.apply(null, dates));
+          out.to = toYmd(Math.max.apply(null, dates));
+        }
+      }
+    }
+
+    for (var c = 2; c <= sum.maxCol; c++) {
+      var name = sum.cell(nameRow, c);
+      name = name == null ? "" : String(name).trim();
+      if (!name || name === "0") continue;
+      out.casts.push({
+        name: name,
+        hourly: num(labels["時給"], c),
+        hours: num(labels["時間"], c),
+        wage: num(labels["支払い時給"], c),
+        sales: num(labels["売り上げ"], c),
+        back: num(labels["バック"], c),
+        other: num(labels["その他"], c),
+        douhan: num(labels["同伴"], c),
+        in10: num(labels["10時IN"], c),
+        gross: num(labels["対象額"], c),
+        pay: num(labels["支給額"], c),
+        pct: firstPct != null ? Math.round(num(firstPct, c) * 100) : null,
+        backRate: labels["％"] != null && labels["％"] !== firstPct ? Math.round(num(labels["％"], c) * 100) : null,
+        douhanCount: cnt[name] ? cnt[name].douhan : null,
+        kumi: cnt[name] ? cnt[name].kumi : null
+      });
+    }
+    return out;
+  }
+
+  $("xlGo").addEventListener("click", function () {
+    if (!XL || !XL.casts.length) { toast("先に Excel をえらんでください", "err"); return; }
+    var f = $("xlFrom").value, t = $("xlTo").value;
+    if (!f || !t) { toast("期間を選んでください", "err"); return; }
+    sb.rpc("night_payroll_preview", { p_store: S.store.id, p_from: f, p_to: t }).then(function (q) {
+      if (q.error) { fail(q.error); return; }
+      xlRender(q.data || []);
+    });
+  });
+
+  function xlRender(rows) {
+    var norm = function (s) { return String(s || "").replace(/[\s　]/g, ""); };
+    var byName = {};
+    rows.forEach(function (r) { byName[norm(r.cast_name)] = r; });
+    var seen = {};
+    var bad = 0;
+
+    var cmp = function (label, a, b, unit) {
+      var fmt = function (n) {
+        if (n == null) return "—";
+        return unit === "h" ? (Math.round(n * 100) / 100) + "h"
+             : unit === "%" ? n + "%" : unit === "本" ? n + "本" : yen(Math.round(n));
+      };
+      var diff = (a == null || b == null) ? null : Math.round((b - a) * 100) / 100;
+      var ng = diff != null && Math.abs(diff) >= (unit ? 0.01 : 1);
+      if (ng) bad++;
+      return "<tr><td>" + label + "</td><td class='num'>" + fmt(a) + "</td><td class='num'>" + fmt(b) + "</td>" +
+        "<td class='num' style='" + (ng ? "color:var(--bad);font-weight:700" : "color:var(--muted)") + "'>" +
+        (diff == null ? "" : ng ? (diff > 0 ? "+" : "") + (unit === "h" ? diff + "h" : unit ? diff + unit : yen(diff).replace("¥-", "-¥")) : "一致") +
+        "</td></tr>";
+    };
+
+    var html = XL.casts.map(function (x) {
+      var r = byName[norm(x.name)];
+      if (r) seen[norm(x.name)] = true;
+      var head = "<h3 style='margin:16px 0 6px'>" + esc(x.name) +
+        (r ? "" : " <span class='tag open'>このツールに同じ名前のキャストがいません</span>") + "</h3>";
+      if (!r) return head;
+      var appPay = (r.gross_amount || 0) - (r.withhold || 0);
+      return head +
+        "<div class='scroll'><table class='list'><tr><th>項目</th><th class='num'>Excel</th><th class='num'>このツール</th><th class='num'>差</th></tr>" +
+        cmp("勤務時間", x.hours, r.work_minutes / 60, "h") +
+        cmp("時給（スライド後）", x.hourly, r.hourly_applied) +
+        cmp("時給ぶん", x.wage, r.wage_amount) +
+        cmp("個人売上", x.sales, r.sales) +
+        cmp("達成率", x.pct, r.work_minutes > 0 ? r.achieved_pct : null, "%") +
+        cmp("バック＋その他＋同伴＋10時IN", x.back + x.other + x.douhan + x.in10, (r.back_amount || 0) + (r.allowance || 0)) +
+        (x.kumi != null ? cmp("指名（組数）", x.kumi, r.nominations, "本") : "") +
+        (x.douhanCount != null ? cmp("同伴", x.douhanCount, r.douhans, "本") : "") +
+        cmp("対象額（総支給）", x.gross, r.gross_amount) +
+        cmp("支給額（一律控除のあと）", x.pay, appPay) +
+        "</table></div>" +
+        "<p style='color:var(--muted);font-size:12px;margin:4px 0 0'>Excel の内訳：バック " + yen(x.back) +
+          "／その他 " + yen(x.other) + "／同伴 " + yen(x.douhan) + "／10時IN " + yen(x.in10) +
+          (x.backRate != null ? "／バック率 " + x.backRate + "%" : "") +
+          "　このツールの内訳：バック " + yen(r.back_amount) + (r.table_back ? "（うち予備 " + yen(r.table_back) + "）" : "") +
+          "／手当 " + yen(r.allowance) + "</p>";
+    }).join("");
+
+    var extra = rows.filter(function (r) {
+      return !seen[norm(r.cast_name)] && (r.work_minutes > 0 || r.sales > 0);
+    });
+    $("xlOut").innerHTML =
+      "<div class='pay-check " + (bad ? "ng" : "ok") + "'>" +
+        (bad ? bad + " か所で数字がちがいます（赤い行）。" : "すべて一致しました。") + "</div>" +
+      html +
+      (extra.length ? "<p style='margin-top:14px'>Excel にいないキャスト（このツールには出勤・売上あり）：" +
+        extra.map(function (r) { return esc(r.cast_name); }).join("・") + "</p>" : "");
   }
 
   /* -------------------------------------------------------------- 出勤 */
@@ -424,14 +607,14 @@
     $("payTable").innerHTML =
       "<tr><th>キャスト</th><th class='num'>時間</th><th class='num'>時給</th>" +
       "<th class='num'>時給ぶん</th><th class='num'>バック</th><th class='num'>手当</th>" +
-      "<th class='num'>控除</th><th class='num'>日払い</th><th class='num'>差引支給</th><th></th></tr>" +
+      "<th class='num'>総支給</th><th class='num'>控除</th><th class='num'>日払い</th><th class='num'>差引支給</th><th></th></tr>" +
       rows.map(function (r) {
         return "<tr>" +
           "<td>" + esc(r.cast_name) +
             (r.confirmed ? ' <span class="tag settled">確定済</span>' : "") +
             (r.below_min_wage ? ' <span class="tag open">最低賃金未満</span>' : "") +
             "<br><span style='color:var(--muted);font-size:11.5px'>" +
-            (S.useNom ? "本指名 " + r.nominations + "／" : "") +
+            (S.useNom ? nomLabel() + " " + r.nominations + "／" : "") +
             "同伴 " + r.douhans + "／" + r.work_days + "日" +
             (r.achieved_pct != null && r.work_minutes > 0 ? "／達成率 " + r.achieved_pct + "%" : "") + "</span></td>" +
           "<td class='num'>" + hm(r.work_minutes) + "</td>" +
@@ -440,15 +623,18 @@
               "<br><span style='color:var(--gold);font-size:11px'>スライド適用</span>" : "") + "</td>" +
           "<td class='num'>" + yen(r.wage_amount) + "</td>" +
           "<td class='num'>" + yen(r.back_amount) +
+            (r.table_back > 0 ? "<br><span style='color:var(--muted);font-size:11px'>うち予備 " + yen(r.table_back) + "</span>" : "") +
             (r.back_bonus > 0 ? "<br><span style='color:var(--gold);font-size:11px'>うち達成分 " + yen(r.back_bonus) + "</span>" : "") + "</td>" +
           "<td class='num'>" + yen(r.allowance) + "</td>" +
-          "<td class='num'>" + (r.deduction ? "-" + yen(r.deduction) : "—") + "</td>" +
+          "<td class='num'>" + yen(r.gross_amount) + "</td>" +
+          "<td class='num'>" + (r.deduction ? "-" + yen(r.deduction) : "—") +
+            (r.withhold > 0 ? "<br><span style='color:var(--muted);font-size:11px'>うち一律 " + yen(r.withhold) + "</span>" : "") + "</td>" +
           "<td class='num'>" + (r.advance ? "-" + yen(r.advance) : "—") + "</td>" +
           "<td class='num' style='font-weight:700'>" + yen(r.net_amount) + "</td>" +
           '<td><button class="btn ghost" style="padding:6px 12px" data-slip="' + r.cast_id + '">明細</button></td>' +
         "</tr>";
       }).join("") +
-      "<tr><td style='font-weight:700'>合計 " + rows.length + "名</td><td colspan='7'></td>" +
+      "<tr><td style='font-weight:700'>合計 " + rows.length + "名</td><td colspan='8'></td>" +
       "<td class='num' style='font-weight:700;color:var(--gold)'>" + yen(sum("net_amount")) + "</td><td></td></tr>";
 
     Array.prototype.forEach.call($("payTable").querySelectorAll("button[data-slip]"), function (b) {
@@ -490,7 +676,7 @@
         "<div><span>適用時給</span><span class='mono'>" + yen(r.hourly_applied) +
           (r.hourly_applied !== r.hourly_base ? "（基本 " + yen(r.hourly_base) + "）" : "") + "</span></div>" +
         (S.useNom
-          ? "<div><span>本指名／同伴／ドリンク</span><span class='mono'>" +
+          ? "<div><span>" + nomLabel() + "／同伴／ドリンク</span><span class='mono'>" +
               r.nominations + " / " + r.douhans + " / " + r.drinks + "</span></div>"
           : "<div><span>同伴／ドリンク</span><span class='mono'>" +
               r.douhans + " / " + r.drinks + "</span></div>") +
@@ -498,9 +684,12 @@
           "<div><span>個人売上／達成率</span><span class='mono'>" + yen(r.sales) + "／" + r.achieved_pct + "%</span></div>" : "") +
         "<div style='border-top:1px solid var(--line);margin-top:8px;padding-top:8px'></div>" +
         line("時給ぶん", r.wage_amount) +
-        line("バック" + (r.back_bonus > 0 ? "（うち達成分 " + yen(r.back_bonus) + "）" : ""), r.back_amount) +
+        line("バック" + (r.table_back > 0 ? "（うち予備バック " + yen(r.table_back) + "）" : "") +
+             (r.back_bonus > 0 ? "（うち達成分 " + yen(r.back_bonus) + "）" : ""), r.back_amount) +
         line("手当", r.allowance) +
-        line("控除", r.deduction, true) +
+        "<div style='font-weight:700'><span>総支給</span><span class='mono'>" + yen(r.gross_amount) + "</span></div>" +
+        (r.withhold > 0 ? line("一律控除（" + Number(S.store.pay_withhold_pct || 0) + "%）", r.withhold, true) : "") +
+        line(r.withhold > 0 ? "そのほかの控除" : "控除", r.deduction - (r.withhold || 0), true) +
         line("日払い済み", r.advance, true) +
         "<div class='grand'><span>差引支給額</span><span class='mono'>" + yen(r.net_amount) + "</span></div>" +
       "</div>" +
