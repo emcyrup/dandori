@@ -75,7 +75,7 @@
 
   var CAT = {
     set: "セット", extension: "延長", nomination: "指名", douhan: "同伴",
-    drink: "ドリンク", bottle: "ボトル", food: "フード", other: "その他"
+    drink: "ドリンク", bottle: "ボトル", champagne: "シャンパン", food: "フード", other: "その他"
   };
 
   /* ------------------------------------------------------------ ログイン */

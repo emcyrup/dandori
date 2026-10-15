@@ -94,9 +94,9 @@
 
   var CAT_LABEL = {
     set: "セット", extension: "延長", nomination: "指名", douhan: "同伴",
-    drink: "ドリンク", bottle: "ボトル", food: "フード", other: "その他"
+    drink: "ドリンク", bottle: "ボトル", champagne: "シャンパン", food: "フード", other: "その他"
   };
-  var CAT_ORDER = ["set", "extension", "nomination", "douhan", "drink", "bottle", "food", "other"];
+  var CAT_ORDER = ["set", "extension", "nomination", "douhan", "drink", "bottle", "champagne", "food", "other"];
 
   /* ------------------------------------------------------------ ログイン */
 

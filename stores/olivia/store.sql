@@ -70,19 +70,19 @@ begin
     (t_id, s_id, 'bottle', '角瓶',                      13000, 0, 10, 132),
     (t_id, s_id, 'bottle', 'シーバス・ミズナラ 12年',   20000, 0, 10, 133),
     (t_id, s_id, 'bottle', 'ヘネシー VS',               25000, 0, 10, 140),
-  -- ---- Champagne（小計の 10%）
-    (t_id, s_id, 'bottle', 'Veuve Clicquot Yellow Label',                 26000, 0, 10, 200),
-    (t_id, s_id, 'bottle', 'Veuve Clicquot White Label',                  30000, 0, 10, 201),
-    (t_id, s_id, 'bottle', 'Moët & Chandon Nectar Impérial Rosé',         42000, 0, 10, 202),
-    (t_id, s_id, 'bottle', 'Xavier-L-Vuitton Bouzy Grand Cru Brut Millésimé', 60000, 0, 10, 203),
-    (t_id, s_id, 'bottle', 'Soumei Brut',                                 70000, 0, 10, 204),
-    (t_id, s_id, 'bottle', 'Perrier-Jouët Belle Époque',                  80000, 0, 10, 205),
-    (t_id, s_id, 'bottle', 'Dom Pérignon',                                80000, 0, 10, 210),
-    (t_id, s_id, 'bottle', 'Dom Pérignon Luminous',                      100000, 0, 10, 211),
-    (t_id, s_id, 'bottle', 'Louis Roederer Cristal',                     160000, 0, 10, 212),
-    (t_id, s_id, 'bottle', 'Armand de Brignac Brut Gold',                140000, 0, 10, 213),
-    (t_id, s_id, 'bottle', 'Armand de Brignac Rosé',                     210000, 0, 10, 214),
-    (t_id, s_id, 'bottle', 'Armand de Brignac Brut Green Golfer''s Edition', 260000, 0, 10, 215);
+  -- ---- Champagne（種類は champagne。売上の内訳でボトルと分けて見られます）
+    (t_id, s_id, 'champagne', 'Veuve Clicquot Yellow Label',                 26000, 0, 10, 200),
+    (t_id, s_id, 'champagne', 'Veuve Clicquot White Label',                  30000, 0, 10, 201),
+    (t_id, s_id, 'champagne', 'Moët & Chandon Nectar Impérial Rosé',         42000, 0, 10, 202),
+    (t_id, s_id, 'champagne', 'Xavier-L-Vuitton Bouzy Grand Cru Brut Millésimé', 60000, 0, 10, 203),
+    (t_id, s_id, 'champagne', 'Soumei Brut',                                 70000, 0, 10, 204),
+    (t_id, s_id, 'champagne', 'Perrier-Jouët Belle Époque',                  80000, 0, 10, 205),
+    (t_id, s_id, 'champagne', 'Dom Pérignon',                                80000, 0, 10, 210),
+    (t_id, s_id, 'champagne', 'Dom Pérignon Luminous',                      100000, 0, 10, 211),
+    (t_id, s_id, 'champagne', 'Louis Roederer Cristal',                     160000, 0, 10, 212),
+    (t_id, s_id, 'champagne', 'Armand de Brignac Brut Gold',                140000, 0, 10, 213),
+    (t_id, s_id, 'champagne', 'Armand de Brignac Rosé',                     210000, 0, 10, 214),
+    (t_id, s_id, 'champagne', 'Armand de Brignac Brut Green Golfer''s Edition', 260000, 0, 10, 215);
 
   get diagnostics n = row_count;
 
@@ -180,3 +180,18 @@ update public.night_cast
         or wage_rules = '[{"type":"ratio","from":150,"wage":2500},
                           {"type":"ratio","from":200,"wage":2500,"back_rate":20},
                           {"type":"ratio","from":300,"wage":3000,"back_rate":20}]'::jsonb);
+
+
+-- ----------------------------------------------------------------------------
+--  2026-10-15 シャンパンを「ボトル」から種類 champagne に分ける（033_champagne.sql）
+--    すでに入っている Olivia のメニューと、過去の伝票の明細も付け替える（売上の内訳が分かれる）
+-- ----------------------------------------------------------------------------
+update public.night_menu
+   set category = 'champagne'
+ where store_id in (select id from public.store where name = 'Olivia')
+   and category = 'bottle' and sort_order between 200 and 299;
+
+update public.night_visit_item i
+   set category = 'champagne'
+  from public.night_menu m
+ where m.id = i.menu_id and m.category = 'champagne' and i.category = 'bottle';
