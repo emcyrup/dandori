@@ -44,6 +44,7 @@
     <button role="tab" data-view="staff" aria-selected="false">スタッフ</button>
     <button role="tab" data-view="imp"   aria-selected="false">過去データ取込</button>
     <button role="tab" data-view="ai"    aria-selected="false">AI・送信</button>
+    <button role="tab" data-view="sec"   aria-selected="false">不正アクセス</button>
   </nav>
 
   <main>
@@ -235,6 +236,32 @@
     </section>
 
     <!-- ---------- AI・送信 ---------- -->
+    <section id="view-sec" class="hidden">
+      <div class="panel">
+        <h2>不正アクセスの見張り</h2>
+        <div class="box">
+          入口がすべての通信を見ていて、<b>ログイン失敗の連続</b>・<b>管理画面などを探す動き</b>・<b>壊れた鍵での呼び出し</b>・
+          <b>サーバーの鍵の外からの利用</b>・<b>短時間の大量アクセス</b>を見つけると記録し、その接続元（IP）をしばらく止めます。
+          お店の方が間違って止まったときは、下の「解除」で戻せます。
+        </div>
+        <div class="row" id="secSummary" style="gap:16px;flex-wrap:wrap;margin:8px 0"></div>
+        <div class="row">
+          <button class="btn ghost" id="secReload">更新</button>
+          <span style="color:var(--muted);font-size:12.5px">記録は 90 日で自動で消えます。</span>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h2>いま止めている接続元</h2>
+        <div class="scroll"><table class="list" id="secBlocks"></table></div>
+        <div class="empty hidden" id="secBlocksEmpty">止めている接続元はありません。</div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h2>直近の記録（新しい順・200 件まで）</h2>
+        <div class="scroll"><table class="list" id="secEvents"></table></div>
+        <div class="empty hidden" id="secEventsEmpty">記録はありません。</div>
+      </div>
+    </section>
+
     <section id="view-ai" class="hidden">
       <div class="panel" style="max-width:640px">
         <h2>AIの下書き</h2>

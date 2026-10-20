@@ -159,7 +159,7 @@
   });
 
   function switchView(v) {
-    ["store", "menu", "staff", "imp", "ai"].forEach(function (n) {
+    ["store", "menu", "staff", "imp", "ai", "sec"].forEach(function (n) {
       $("view-" + n).classList.toggle("hidden", n !== v);
     });
     Array.prototype.forEach.call(document.querySelectorAll("nav.tabs button"), function (b) {
@@ -169,7 +169,78 @@
     if (v === "staff") loadStaff();
     if (v === "imp") loadImports();
     if (v === "ai") loadAi();
+    if (v === "sec") loadSecurity();
   }
+
+  /* ---------------------------------------------------------- 不正アクセス */
+
+  var SEC_KIND = {
+    login_fail: "ログイン失敗", login_bruteforce: "ログイン失敗の連続", bad_token: "壊れた鍵での呼び出し",
+    scan: "探索アクセス", svc_key_misuse: "サーバーの鍵の外からの利用", flood: "大量アクセス",
+    blocked: "遮断しました", unblocked: "遮断を解除"
+  };
+  var SEC_SEV = { info: "", warn: "注意", high: "重要" };
+
+  function secWhen(ts) {
+    var d = new Date(ts);
+    return (d.getMonth() + 1) + "/" + d.getDate() + " " +
+      String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  function loadSecurity() {
+    Promise.all([
+      sb.rpc("security_summary"),
+      sb.from("security_block").select("*").eq("released", false).gt("until", new Date().toISOString()).order("blocked_at", { ascending: false }),
+      sb.from("security_event").select("*").order("at", { ascending: false }).limit(200)
+    ]).then(function (r) {
+      if (r[0].error) { fail(r[0].error); return; }
+      var sm = r[0].data || {};
+      $("secSummary").innerHTML = [
+        ["24時間の検知", sm.day], ["7日の検知", sm.week], ["うち重要", sm.high], ["止めている接続元", sm.blocked]
+      ].map(function (x) {
+        return "<div><div style='font-size:12px;color:var(--muted)'>" + x[0] + "</div>" +
+          "<div class='mono' style='font-size:22px;font-weight:700" + (x[0] === "うち重要" && x[1] ? ";color:var(--bad)" : "") + "'>" + (x[1] || 0) + "</div></div>";
+      }).join("");
+
+      var bl = r[1].data || [];
+      $("secBlocksEmpty").classList.toggle("hidden", bl.length > 0);
+      $("secBlocks").innerHTML = bl.length ? "<tr><th>接続元</th><th>理由</th><th>いつから</th><th>いつまで</th><th></th></tr>" +
+        bl.map(function (b) {
+          return "<tr><td class='mono'>" + esc(b.ip) + "</td><td>" + esc(SEC_KIND[b.reason] || b.reason) + "</td>" +
+            "<td>" + secWhen(b.blocked_at) + "</td><td>" + secWhen(b.until) + "</td>" +
+            "<td><button class='btn ghost' style='padding:6px 12px' data-unblock='" + esc(b.ip) + "'>解除</button></td></tr>";
+        }).join("") : "";
+      Array.prototype.forEach.call($("secBlocks").querySelectorAll("button[data-unblock]"), function (btn) {
+        btn.addEventListener("click", function () {
+          if (!window.confirm(btn.dataset.unblock + " の遮断を解除します。よろしいですか？")) return;
+          sb.rpc("security_unblock", { p_ip: btn.dataset.unblock, p_note: "画面から解除" }).then(function (q) {
+            if (q.error) { fail(q.error); return; }
+            toast("解除しました（入口には 30 秒ほどで伝わります）", "ok");
+            loadSecurity();
+          });
+        });
+      });
+
+      var ev = r[2].data || [];
+      $("secEventsEmpty").classList.toggle("hidden", ev.length > 0);
+      $("secEvents").innerHTML = ev.length ? "<tr><th>いつ</th><th>なに</th><th>接続元</th><th>くわしく</th></tr>" +
+        ev.map(function (e) {
+          var d = e.detail || {};
+          var info = [];
+          if (e.user_email) info.push(e.user_email);
+          if (d.count) info.push(d.count + "回");
+          if (d.fails) info.push("失敗 " + d.fails + "回");
+          if (d.minutes) info.push(d.minutes + "分止めました");
+          if (d.reason) info.push(SEC_KIND[d.reason] || d.reason);
+          if (d.by) info.push(d.by + "さんが解除");
+          if (e.path && e.kind !== "login_fail") info.push(e.path);
+          return "<tr" + (e.severity === "high" ? " style='color:var(--bad)'" : "") + "><td class='mono'>" + secWhen(e.at) + "</td>" +
+            "<td>" + esc(SEC_KIND[e.kind] || e.kind) + (SEC_SEV[e.severity] ? " <span class='tag " + (e.severity === "high" ? "open" : "settled") + "'>" + SEC_SEV[e.severity] + "</span>" : "") + "</td>" +
+            "<td class='mono'>" + esc(e.ip || "") + "</td><td><small>" + esc(info.join("　")) + "</small></td></tr>";
+        }).join("") : "";
+    });
+  }
+  $("secReload").addEventListener("click", loadSecurity);
 
   /* -------------------------------------------------------------- 店舗の設定 */
 

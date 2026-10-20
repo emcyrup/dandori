@@ -100,6 +100,8 @@ const apps = [
       LISTEN_PORT: env.LISTEN_PORT || "8032", SITE_URL, JWT_SECRET, ANON_KEY: need("ANON_KEY"),
       REST_PORT: PORTS.rest, AUTH_PORT: PORTS.auth, STORAGE_PORT: PORTS.storage, FN_BASE_PORT: String(PORTS.fnBase),
       NO_VERIFY_JWT: "line-webhook",
+      // 見張り（不正アクセスの検知）。記録はサーバー鍵で DB に書く
+      SERVICE_ROLE_KEY: need("SERVICE_ROLE_KEY"), SECURITY: env.SECURITY || "1", SECURITY_ALLOW_IPS: env.SECURITY_ALLOW_IPS || "",
     },
   },
 ];

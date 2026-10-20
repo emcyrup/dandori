@@ -91,6 +91,12 @@ check() {
   ok 関数     "$(curl -s -o /dev/null -w %{http_code} -X POST -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d '{}' $URL/functions/v1/send-outbox)"
   ok 公開URL  "$(curl -s -m 10 -o /dev/null -w %{http_code} "$SITE_URL/login.html" || echo '--')"
   $PM2 ls | grep -E "│ $STORE-" | awk -F'│' '{gsub(/ /,"",$3); gsub(/ /,"",$10); printf "   %-22s %s\n", $3, $10}' || true
+  if [ "$(psql -X -tAc "select to_regclass('public.security_event') is not null" 2>/dev/null)" = "t" ]; then
+    echo "== 不正アクセスの見張り（24時間）"
+    psql -X -tAc "select '   検知 ' || count(*) || ' 件、うち重要 ' || count(*) filter (where severity = 'high') || ' 件、止めている接続元 ' ||
+                    (select count(*) from public.security_block where not released and until > now()) || ' か所'
+                    from public.security_event where at > now() - interval '24 hours' and kind <> 'unblocked'" 2>/dev/null || true
+  fi
   echo "== 完了: $SITE_URL/"
 }
 
