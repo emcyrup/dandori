@@ -44,13 +44,20 @@ const SITE_HEADERS = {
   "X-Robots-Tag": "noindex, nofollow",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Frame-Options": "DENY",                                // ほかのサイトの中に埋め込ませない（クリックジャッキング）
+  "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+  "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
+  "Strict-Transport-Security": "max-age=31536000",       // https でしか開かない（nginx が https を終端）
 };
+const BODY_LIMIT = { "/auth/v1/": 64 * 1024, "/rest/v1/": 8 * 1024 * 1024, "/functions/v1/": 2 * 1024 * 1024 };
 const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "upgrade", "proxy-connection"]);
 
 // ---- 画面
 function serveStatic(req, res, urlPath) {
   if (req.method !== "GET" && req.method !== "HEAD") return text(res, 405, "Method Not Allowed");
-  let rel = decodeURIComponent(urlPath.split("?")[0]);
+  let rel;
+  try { rel = decodeURIComponent(urlPath.split("?")[0]); } catch { return text(res, 400, "Bad Request"); }   // "%" だけ、などで落ちない
+  if (rel.includes("\0")) { sec.onNotFound(req); return text(res, 404, "Not found"); }
   if (rel.endsWith("/")) rel += "index.html";
   const file = path.resolve(SITE, "." + rel);
   if (!file.startsWith(SITE + path.sep) || path.basename(file).startsWith("_")) { sec.onNotFound(req); return text(res, 404, "Not found"); }
@@ -77,7 +84,9 @@ function proxy(req, res, port, newPath, timeout, opts) {
   const { body = null, onResponse = null } = opts || {};
   const headers = {};
   for (const [k, v] of Object.entries(req.headers)) if (!HOP.has(k)) headers[k] = v;
-  headers["x-forwarded-for"] = [req.headers["x-forwarded-for"], req.socket.remoteAddress].filter(Boolean).join(", ");
+  if (body !== null) { headers["content-length"] = String(body.length); delete headers["transfer-encoding"]; }
+  // 接続元は入口が決めた 1 つだけを渡す（クライアントが付けた X-Forwarded-For は上流に見せない）
+  headers["x-forwarded-for"] = sec.clientIp(req);
   headers["x-forwarded-proto"] = req.headers["x-forwarded-proto"] || "https";
   headers["x-forwarded-host"] = req.headers["x-forwarded-host"] || req.headers.host || "";
   headers.host = `127.0.0.1:${port}`;
@@ -96,20 +105,39 @@ function proxy(req, res, port, newPath, timeout, opts) {
   if (body !== null) { up.end(body); } else { req.pipe(up); }
 }
 
-// 本文を読み切る（ログインの失敗を数えるときに、メールを取り出すため）。大きすぎれば打ち切る
+// 本文を読み切る（ログインの失敗を数えるときに、メールを取り出すため）。大きすぎれば null（413 にする）
 function readBody(req, limit) {
   return new Promise((resolve) => {
-    const chunks = []; let size = 0;
-    req.on("data", (c) => { size += c.length; if (size <= limit) chunks.push(c); });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", () => resolve(Buffer.concat(chunks)));
+    const chunks = []; let size = 0; let over = false;
+    req.on("data", (c) => { size += c.length; if (size > limit) { over = true; req.destroy(); } else chunks.push(c); });
+    req.on("end", () => resolve(over ? null : Buffer.concat(chunks)));
+    req.on("close", () => resolve(over ? null : Buffer.concat(chunks)));
+    req.on("error", () => resolve(null));
   });
+}
+
+// 申告された本文の大きさが上限を超えていれば、読む前に 413
+function tooBig(req, res, limit) {
+  const n = Number(req.headers["content-length"] || 0);
+  if (n > limit) { json(res, 413, { code: "TOO_LARGE", message: "送られた内容が大きすぎます" }); return true; }
+  return false;
 }
 
 function text(res, code, s) { res.writeHead(code, { "Content-Type": "text/plain; charset=utf-8" }); res.end(s); }
 function json(res, code, o) { res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" }); res.end(JSON.stringify(o)); }
 
-http.createServer((req, res) => {
+// 想定外の例外で入口そのものが落ちないように（落ちると画面も API も全部止まる）
+process.on("uncaughtException", (e) => { console.error("uncaught:", e && e.stack || e); });
+process.on("unhandledRejection", (e) => { console.error("unhandled:", e && e.stack || e); });
+
+const server = http.createServer((req, res) => {
+  try { route(req, res); } catch (e) { console.error(e); if (!res.headersSent) json(res, 500, { code: "ERROR", message: "入口でエラーになりました" }); else res.destroy(); }
+});
+server.headersTimeout = 20_000;      // ヘッダだけ送って待たせる接続を切る
+server.requestTimeout = 180_000;     // 本文の送信が遅すぎる接続を切る（アップロード・AI の下書きは 150 秒以内）
+server.maxHeadersCount = 100;
+
+function route(req, res) {
   const url = req.url || "/";
   if (url === "/health") return text(res, 200, "ok");
 
@@ -122,7 +150,9 @@ http.createServer((req, res) => {
 
   // ログイン：失敗が続いたら遮断する（本文のメールも記録）
   if (url.startsWith("/auth/v1/token") && req.method === "POST") {
-    return readBody(req, 64 * 1024).then((buf) => {
+    if (tooBig(req, res, BODY_LIMIT["/auth/v1/"])) return;
+    return readBody(req, BODY_LIMIT["/auth/v1/"]).then((buf) => {
+      if (buf === null) { if (!res.headersSent) json(res, 413, { code: "TOO_LARGE", message: "送られた内容が大きすぎます" }); return; }
       proxy(req, res, UPSTREAM["/auth/v1/"].port, url.slice("/auth/v1/".length - 1), 30_000, {
         body: buf, onResponse: (code) => sec.onLogin(req, code, buf.toString("utf8")),
       });
@@ -131,6 +161,7 @@ http.createServer((req, res) => {
 
   for (const [prefix, u] of Object.entries(UPSTREAM)) {
     if (url.startsWith(prefix)) {
+      if (prefix !== "/storage/v1/" && tooBig(req, res, BODY_LIMIT[prefix])) return;
       const watch = prefix === "/rest/v1/" ? { onResponse: (code) => { if (code === 401) sec.onBadToken(req); } } : null;
       return proxy(req, res, u.port, url.slice(prefix.length - 1), u.timeout, watch);
     }
@@ -141,6 +172,7 @@ http.createServer((req, res) => {
     const name = rest.split(/[/?]/)[0];
     const port = FUNCTIONS[name];
     if (!port) return json(res, 404, { code: "NOT_FOUND", message: "Requested function was not found" });
+    if (tooBig(req, res, BODY_LIMIT["/functions/v1/"])) return;
     if (req.method !== "OPTIONS" && !NO_VERIFY.has(name)) {
       const tok = bearer(req);
       if (!tok) { sec.onBadToken(req); return json(res, 401, { code: "UNAUTHORIZED_NO_AUTH_HEADER", message: "Missing authorization header", msg: "Missing authorization header" }); }
@@ -150,4 +182,6 @@ http.createServer((req, res) => {
   }
 
   serveStatic(req, res, url);
-}).listen(PORT, "127.0.0.1", () => { console.log(`gateway: 127.0.0.1:${PORT} → ${SITE}`); sec.start(); });
+}
+
+server.listen(PORT, "127.0.0.1", () => { console.log(`gateway: 127.0.0.1:${PORT} → ${SITE}`); sec.start(); });

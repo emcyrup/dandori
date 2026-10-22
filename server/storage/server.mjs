@@ -32,7 +32,7 @@ if (!JWT_SECRET || !env.DATABASE_URL) { console.error("JWT_SECRET / DATABASE_URL
 
 // この部品自身の問い合わせ（バケットの有無・署名リンクの確認）は「関数内」と同じ扱いで RLS を素通りする。
 // ログインした方の代わりに行う読み書き（asUser）は、取引の中で名前を変えて RLS を効かせる。
-const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 5, application_name: "dandori_fn" });
+const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 5, application_name: "dandori_fn", statement_timeout: 8000 });
 fs.mkdirSync(ROOT, { recursive: true });
 
 class HttpError extends Error { constructor(status, error, message) { super(message); this.status = status; this.error = error; } }
@@ -55,7 +55,7 @@ function sendError(res, e) {
   if (e && e.code === "42501") return send(res, 403, { statusCode: "403", error: "Unauthorized", message: "new row violates row-level security policy", code: "AccessDenied" });
   if (e && e.code === "23505") return send(res, 400, { statusCode: "409", error: "Duplicate", message: "The resource already exists" });
   console.error(e);
-  send(res, 500, { statusCode: "500", error: "Internal", message: String(e && e.message || e) });
+  send(res, 500, { statusCode: "500", error: "Internal", message: "ファイル置き場でエラーになりました" });
 }
 function readBody(req, max = LIMIT) {
   return new Promise((ok, ng) => {
@@ -127,19 +127,27 @@ async function readUpload(req) {
   }
   const buf = await readBody(req);
   const cc = /max-age=(\d+)/.exec(req.headers["cache-control"] || "");
-  return { buf, mimetype: ct.split(";")[0] || "application/octet-stream", cacheControl: cc ? cc[1] : "3600" };
+  return { buf, mimetype: ct.split(";")[0] || "application/octet-stream", cacheControl: cc && /^\d{1,9}$/.test(cc[1]) ? cc[1] : "3600" };
 }
 
+// ブラウザがそのまま開いてよい種類（画面に出す写真・PDF）。それ以外はダウンロードにする。
+// HTML / SVG / XML / JS などを同じオリジンで開くと、入れた人のスクリプトが店長の画面で動いてしまう（XSS）ため。
+const INLINE_OK = /^(image\/(png|jpeg|gif|webp|bmp|avif)|application\/pdf|video\/(mp4|webm)|audio\/(mpeg|mp4|ogg|wav))$/i;
 async function streamFile(res, bucket, name, meta, download) {
   const p = diskPath(bucket, name);
   let st; try { st = await fsp.stat(p); } catch { throw E.notFound(); }
+  let type = String((meta && meta.mimetype) || "application/octet-stream").split(";")[0].trim().toLowerCase();
+  const inline = INLINE_OK.test(type) && download === undefined;
+  if (!INLINE_OK.test(type)) type = "application/octet-stream";
   const h = {
-    "Content-Type": (meta && meta.mimetype) || "application/octet-stream",
+    "Content-Type": type,
     "Content-Length": st.size,
-    "Cache-Control": `max-age=${(meta && meta.cacheControl) || 3600}`,
+    "Cache-Control": `private, max-age=${(meta && meta.cacheControl) || 3600}`,
     ETag: `"${(meta && meta.eTag) || st.mtimeMs}"`,
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+    "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(download || path.basename(name))}`,
   };
-  if (download !== undefined) h["Content-Disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(download || path.basename(name))}`;
   res.writeHead(200, h);
   fs.createReadStream(p).pipe(res);
 }

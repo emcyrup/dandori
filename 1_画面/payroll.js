@@ -681,7 +681,7 @@
     modal(
       "<h2>" + esc(r.cast_name) + "　給与明細</h2>" +
       "<p style='color:var(--muted);font-size:12.5px;margin:-8px 0 14px'>" +
-        f + " 〜 " + t + "　／　" + S.store.name + "</p>" +
+        f + " 〜 " + t + "　／　" + esc(S.store.name) + "</p>" +
       '<div class="totals">' +
         "<div><span>出勤</span><span class='mono'>" + r.work_days + "日　" + hm(r.work_minutes) + "</span></div>" +
         "<div><span>適用時給</span><span class='mono'>" + yen(r.hourly_applied) +

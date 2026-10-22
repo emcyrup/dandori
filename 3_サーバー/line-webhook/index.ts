@@ -131,8 +131,12 @@ Deno.serve(async (req) => {
     );
   }
 
-  const raw = await req.text();
   const signature = req.headers.get("x-line-signature") ?? "";
+  if (!signature) return ng("署名がありません", 401);             // 署名なしは DB を見る前に断る
+  const lenHdr = Number(req.headers.get("content-length") ?? "0");
+  if (lenHdr > 1_000_000) return ng("大きすぎます", 413);
+  const raw = await req.text();
+  if (raw.length > 1_000_000) return ng("大きすぎます", 413);
 
   const db = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false },
@@ -144,7 +148,7 @@ Deno.serve(async (req) => {
     .select("key_name, value")
     .eq("tenant_id", tenantId);
 
-  if (secErr) return ng("鍵が読めませんでした： " + secErr.message, 500);
+  if (secErr) { console.error("tenant_secret:", secErr.message); return ng("署名が合いません", 401); }
 
   const keyOf = (k: string) =>
     (secrets ?? []).find((s: any) => s.key_name === k)?.value ?? null;
@@ -153,11 +157,9 @@ Deno.serve(async (req) => {
   const channelToken = keyOf("line_channel_token");
 
   if (!channelSecret) {
-    return ng(
-      "この法人の line_channel_secret が登録されていません。" +
-        "「設定」→「AI・送信」で登録してください",
-      500,
-    );
+    //  未設定でも外には同じ返事（法人IDの当たり外れを教えない）。中のログには理由を残す
+    console.error("line-webhook: この法人の line_channel_secret が登録されていません。「設定」→「AI・送信」で登録してください");
+    return ng("署名が合いません", 401);
   }
 
   // ---- 本当にLINEから来たものかを確かめます -------------------------------
@@ -238,6 +240,7 @@ Deno.serve(async (req) => {
     const { data: result, error: rpcErr } = await db.rpc("wish_from_line", {
       p_line_user_id: userId,
       p_text: text,
+      p_tenant: tenantId,          // この法人の名簿にいる人だけ（ほかの法人の希望は書き換えられない）
     });
 
     let msg: string;

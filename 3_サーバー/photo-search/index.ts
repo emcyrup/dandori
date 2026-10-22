@@ -106,6 +106,9 @@ Deno.serve(async (req) => {
     from:  "Pixabay",
   })).filter((x: any) => x.thumb && x.full);
 
+  if (CACHE.size >= 500) {            // ためすぎない（古いものから捨てる）
+    for (const k of CACHE.keys()) { CACHE.delete(k); if (CACHE.size < 400) break; }
+  }
   CACHE.set(cacheKey, { at: Date.now(), data: results });
   return json({ results });
 });

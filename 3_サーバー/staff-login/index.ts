@@ -89,6 +89,14 @@ Deno.serve(async (req) => {
   }
   const s = chk.data as any;
 
+  //  店長（manager）はオーナーのログインを触れません。自分のログインも止められません
+  if (s.role === "owner" && s.me_role !== "owner") {
+    return json({ error: "オーナーのログインは、オーナーだけが変えられます" }, 403);
+  }
+  if (action === "stop" && s.staff_id === s.me_id) {
+    return json({ error: "ご自分のログインは止められません" }, 400);
+  }
+
   try {
     //  -------------------------------------------- 2. ログインを止める
     if (action === "stop") {
@@ -107,16 +115,27 @@ Deno.serve(async (req) => {
     }
 
     let userId: string | null = s.auth_user_id ?? null;
-    let useEmail = email || s.email || "";
+    //  メールは名簿のものを使います。画面から別のメールを指定できるのは、まだログインが無い人だけ
+    //  （ログインがある人のメールを差し替えると、他人のログインを乗っ取る道になるため）
+    let useEmail = (userId ? (s.email || email) : (email || s.email)) || "";
+    if (userId && email && s.email && email !== String(s.email).toLowerCase()) {
+      return json({ error: "メールアドレスを変えるときは、先に名簿のメールを直してください" }, 400);
+    }
 
     if (!useEmail) {
       return json({ error: "メールアドレスを入れてください" }, 400);
     }
 
-    //  すでに同じアドレスのログインがあれば、それを使います
+    //  すでに同じアドレスのログインがあれば、それを使います。ただし、ほかの人の名簿に結びついているログインは使いません
     if (!userId) {
       const f = await admin.rpc("sr_auth_user_by_email", { p_email: useEmail });
       if (!f.error && f.data) userId = f.data as string;
+      if (userId) {
+        const other = await admin.from("staff").select("id").eq("auth_user_id", userId).neq("id", staffId).limit(1);
+        if (other.error || (other.data && other.data.length)) {
+          return json({ error: "そのメールアドレスは、すでにほかの方が使っています。" }, 400);
+        }
+      }
     }
 
     const pw = tempPassword();

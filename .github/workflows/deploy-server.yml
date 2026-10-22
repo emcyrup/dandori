@@ -54,10 +54,17 @@ jobs:
           for f in server/gateway/*.mjs server/storage/*.mjs server/lib/*.mjs server/outbox/*.mjs; do node --check "$f"; done
       - name: 配備する店舗
         id: list
+        env:
+          INPUT_STORE: ${{ inputs.store }}
+          VAR_STORES: ${{ vars.STORES }}
         run: |
-          raw="${{ inputs.store }}"
-          [ -n "$raw" ] || raw="${{ vars.STORES }}"
+          # 店舗名は英数と - だけ（サーバーのフォルダ名・シェルに渡るため、それ以外は受け付けない）
+          raw="$INPUT_STORE"
+          [ -n "$raw" ] || raw="$VAR_STORES"
           [ -n "$raw" ] || raw="olivia"
+          for s in $(echo "$raw" | tr ',' ' '); do
+            [[ "$s" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || { echo "!! 店舗名が変です: $s（英小文字・数字・- だけ）"; exit 1; }
+          done
           json=$(echo "$raw" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.stringify(s.trim().split("\n"))))')
           echo "stores=$json" >> "$GITHUB_OUTPUT"
           echo "店舗: $json"
@@ -101,17 +108,28 @@ jobs:
       - name: SSH の準備
         env:
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST_KEY: ${{ vars.SERVER_HOST_KEY }}
         run: |
           [ -n "$SSH_KEY" ] || { echo "!! Environment「$STORE」の Secrets に SERVER_SSH_KEY がありません"; exit 1; }
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p 22 -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # サーバーのホスト鍵。Variables の SERVER_HOST_KEY（`ssh-keyscan -t ed25519 ホスト` の1行）があれば
+          # それだけを信じる（なりすましサーバーに Secrets を送らない）。無ければ初回取得（従来どおり）
+          if [ -n "${SERVER_HOST_KEY:-}" ]; then
+            printf '%s\n' "$SERVER_HOST_KEY" > ~/.ssh/known_hosts
+            strict=yes
+          else
+            ssh-keyscan -p 22 -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            strict=accept-new
+            echo "::warning::Variables に SERVER_HOST_KEY が無いので、サーバーの鍵を初回取得で信じています"
+          fi
           cat > ~/.ssh/config <<EOF
           Host prod
             HostName $SERVER_HOST
             User $SERVER_USER
             IdentityFile ~/.ssh/deploy_key
             IdentitiesOnly yes
+            StrictHostKeyChecking $strict
             ServerAliveInterval 30
           EOF
           ssh prod 'echo "接続OK: $(whoami)@$(hostname) node $(node -v 2>/dev/null)"'
@@ -140,7 +158,7 @@ jobs:
         run: |
           [ -n "$DB_PASSWORD" ] || { echo "!! Environment「$STORE」の Secrets に DB_PASSWORD がありません"; exit 1; }
           for k in STORE SITE_URL LISTEN_PORT DB_NAME DB_USER DB_PASSWORD DB_ADMIN_USER DB_ADMIN_PASSWORD AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD STORAGE_ADMIN_PASSWORD SMTP_USER SMTP_PASS SMTP_ADMIN_EMAIL ANTHROPIC_API_KEY GEMINI_API_KEY OPENAI_API_KEY PIXABAY_API_KEY; do
-            printf '%s' "${!k}" | ssh prod "cd ~/$SERVER_DIR/server && ./env-set.sh $k \"\$(cat)\""
+            printf '%s' "${!k}" | ssh prod "cd ~/$SERVER_DIR/server && ./env-set.sh $k"   # 値は標準入力で渡す（ps に出さない）
           done
           ssh prod "cd ~/$SERVER_DIR/server && ./setup.sh"
 

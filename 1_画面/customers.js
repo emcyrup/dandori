@@ -10,6 +10,7 @@
   var CFG = window.DANDORI_CONFIG || {};
   var sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey);
   var S = { me: null, stores: [], store: null, casts: [], customers: [], due: [], bottles: [] };
+  function csvCell(v) { var t = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; }
 
   var $ = function (id) { return document.getElementById(id); };
   var yen = function (n) { return "¥" + (n || 0).toLocaleString("ja-JP"); };
@@ -198,7 +199,7 @@
     var head = ["お名前", "担当", "来店回数", "最終来店", "いつもの間隔", "過ぎた日数",
                 "1回あたり", "累計", "連絡手段", "前回の連絡"];
     var lines = [head.join(",")].concat(S.due.map(function (r) {
-      return ['"' + r.name + '"', '"' + (r.main_cast || "") + '"', r.visits, r.last_visit,
+      return [csvCell(r.name), csvCell(r.main_cast || ""), r.visits, r.last_visit,
               r.avg_interval, r.over_days, r.per_visit, r.total_sales,
               PREF[r.contact_pref], r.last_contact_on || ""].join(",");
     }));

@@ -34,7 +34,8 @@ URL="http://127.0.0.1:${LISTEN_PORT:-8032}"
 
 precheck_db() {
   echo "== DB の確認（$DB_USER@$DB_HOST/$DB_NAME）"
-  psql -X -tA -v ON_ERROR_STOP=1 <<'SQL' > /tmp/dandori-precheck.$$ || { echo "!! DB に接続できません（.env の DB_* を確認）"; exit 1; }
+  local pre; pre="$(mktemp)" || exit 1
+  psql -X -tA -v ON_ERROR_STOP=1 <<'SQL' > "$pre" || { rm -f "$pre"; echo "!! DB に接続できません（.env の DB_* を確認）"; exit 1; }
 select
   (select rolcreaterole from pg_roles where rolname = current_user),
   (select count(*) = 6 from pg_roles where rolname in ('anon','authenticated','service_role','authenticator','supabase_auth_admin','supabase_storage_admin')),
@@ -42,7 +43,7 @@ select
   (select exists (select 1 from pg_roles where rolname = 'postgres')),
   current_setting('server_version_num')::int >= 150000;
 SQL
-  IFS='|' read -r can_create roles_ok is_owner has_pg ver_ok < /tmp/dandori-precheck.$$; rm -f /tmp/dandori-precheck.$$
+  IFS='|' read -r can_create roles_ok is_owner has_pg ver_ok < "$pre"; rm -f "$pre"
   printf '   役割を作れる: %s / 役割がそろっている: %s / DB の持ち主: %s / postgres 役割: %s / PostgreSQL 15 以上: %s\n' "$can_create" "$roles_ok" "$is_owner" "$has_pg" "$ver_ok"
   if [ "${DB_MODE:-}" = "single" ]; then
     echo "   単一ロールモード（DB ユーザー1つで動かす）"
@@ -86,7 +87,7 @@ check() {
   ok() { printf '   %-12s %s\n' "$1" "$2"; }
   ok 入口     "$(curl -s -o /dev/null -w %{http_code} $URL/login.html)"
   ok ログイン "$(curl -s -o /dev/null -w %{http_code} $URL/auth/v1/health)"
-  ok データ   "$(curl -s -o /dev/null -w %{http_code} -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" $URL/rest/v1/)"
+  ok データ   "$(curl -s -o /dev/null -w %{http_code} -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" "$URL/rest/v1/store?select=id&limit=1")"
   ok ファイル "$(curl -s -o /dev/null -w %{http_code} $URL/storage/v1/status)"
   ok 関数     "$(curl -s -o /dev/null -w %{http_code} -X POST -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d '{}' $URL/functions/v1/send-outbox)"
   ok 公開URL  "$(curl -s -m 10 -o /dev/null -w %{http_code} "$SITE_URL/login.html" || echo '--')"

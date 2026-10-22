@@ -133,7 +133,8 @@ Deno.serve(async (req) => {
   if (auth && !auth.includes(service)) {
     const asUser = createClient(url, anon, { global: { headers: { Authorization: auth } } });
     const { data: u } = await asUser.auth.getUser();
-    if (u?.user) {
+    if (!u?.user) return json({ error: "ログインが必要です" }, 401);
+    {
       const { data: me } = await db.from("staff")
         .select("tenant_id, role, is_active")
         .eq("auth_user_id", u.user.id).maybeSingle();

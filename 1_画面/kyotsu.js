@@ -30,6 +30,13 @@ window.K = (function () {
   }
 
   function yen(n) { return "¥" + (Number(n) || 0).toLocaleString("ja-JP"); }
+
+  /*  CSV の1マス。" は "" に。先頭が = + - @ のときは Excel が式として実行しないよう ' を付ける */
+  function csvCell(v) {
+    var s = v == null ? "" : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
   function num(n) { return (Number(n) || 0).toLocaleString("ja-JP"); }
 
   function ymd(d) {
@@ -241,7 +248,7 @@ window.K = (function () {
 
   return {
     sb: sb, S: S, cfg: CFG, DOW: DOW,
-    $: $, esc: esc, yen: yen, num: num, ymd: ymd, today: today, md: md, dt: dt,
+    $: $, esc: esc, yen: yen, csvCell: csvCell, num: num, ymd: ymd, today: today, md: md, dt: dt,
     toast: toast, fail: fail, modal: modal, closeModal: closeModal, confirm: confirmBox,
     rpc: rpc, table: table, empty: empty, pill: pill, stat: stat,
     bind: bind, opts: opts, isBoss: isBoss, baseUrl: baseUrl,

@@ -41,7 +41,8 @@ begin
     select p.oid::regprocedure as sig
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname in ('app', 'public') and p.prokind = 'f'
-       and p.proname not in ('is_service', 'rls_bypass')
+       -- 「だれが呼んでいるか」を見分ける関数と、その判定で守る薄い入口には印を付けない（付けると判定が常に「関数の中」になる）
+       and p.proname not in ('is_service', 'rls_bypass', 'is_local', 'direct_write', 'staff_guard_direct', 'night_recalc_visit')
   loop
     execute format('alter function %s set application_name = %L', r.sig, 'dandori_fn');
     n := n + 1;

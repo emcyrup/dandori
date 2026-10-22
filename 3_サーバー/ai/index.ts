@@ -173,7 +173,8 @@ let LAST_MODEL = "";
 async function geminiPickModel(key: string): Promise<string | null> {
   try {
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${key}&pageSize=200`,
+      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=200`,
+      { headers: { "x-goog-api-key": key } },
     );
     if (!r.ok) return null;
     const j = await r.json();
@@ -199,10 +200,10 @@ async function geminiPickModel(key: string): Promise<string | null> {
 
 async function geminiOnce(model: string, text: string, key: string) {
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text }] }],
         generationConfig: { temperature: 0.4, maxOutputTokens: 800 },
@@ -422,6 +423,8 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     let msg = e instanceof Error ? e.message : String(e);
+    //  鍵やアドレスがエラー文に混ざっても外に出さない
+    msg = msg.replace(/[?&]key=[^&\s)]+/g, "?key=…").replace(/https?:\/\/\S+/g, "（提供元のアドレス）").slice(0, 400);
     //  AIのモデルが入れ替わったときは、何をすればよいかをそのまま出します
     if (/no longer available|not found|is not supported|deprecated|decommission/i.test(msg)) {
       msg = "いま選ばれているAIのモデル「" + model + "」が、提供元で使えなくなっています。" +

@@ -46,12 +46,14 @@ const apps = [
   {
     ...common("rest"), script: path.join(HERE, "bin", "postgrest"), interpreter: "none",
     env: {
-      PGRST_DB_URI: dbUser("authenticator", env.AUTHENTICATOR_PASSWORD || ""),
+      // 1つの問い合わせは 8 秒まで（長い期間の集計を連打して DB を塞がれないように）
+      PGRST_DB_URI: dbUser("authenticator", env.AUTHENTICATOR_PASSWORD || "") + "&options=-c%20statement_timeout%3D8000",
       PGRST_DB_SCHEMAS: "public", PGRST_DB_USE_LEGACY_GUCS: "false",
       // 単一ロール：匿名の役割 = DB ユーザー自身。鍵の中の role は見ない（存在しない役割に切り替えないため）
       PGRST_DB_ANON_ROLE: SINGLE ? need("DB_USER") : "anon",
       ...(SINGLE ? { PGRST_JWT_ROLE_CLAIM_KEY: ".dandori_single_role_unused" } : {}),
-      PGRST_DB_POOL: "10", PGRST_SERVER_HOST: "127.0.0.1", PGRST_SERVER_PORT: PORTS.rest,
+      PGRST_DB_POOL: "10", PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10", PGRST_SERVER_HOST: "127.0.0.1", PGRST_SERVER_PORT: PORTS.rest,
+      PGRST_OPENAPI_MODE: "disabled",   // 表・関数の一覧（/rest/v1/）を匿名に見せない
       PGRST_JWT_SECRET: JWT_SECRET, PGRST_LOG_LEVEL: "error",
     },
   },

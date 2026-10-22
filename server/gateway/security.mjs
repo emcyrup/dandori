@@ -54,11 +54,29 @@ setInterval(() => {   // 1時間に1回、空の記憶を捨てる
   for (const [ip, b] of blocks) if (b.until < now) blocks.delete(ip);
 }, 60 * 60e3).unref();
 
-// ---- 接続元の IP。nginx が最後に足した X-Forwarded-For の値を使う（先頭は偽装できるため）
+// ---- 接続元の IP。
+//   入口は 127.0.0.1 でしか待たないので、直接つなげるのは同じサーバーの nginx と中の部品だけ。
+//   nginx 経由（remoteAddress が 127.0.0.1 で X-Forwarded-For あり）のときは、nginx が「最後に」足した値を使う
+//   （先頭はクライアントが偽装できる）。nginx が X-Forwarded-For を付けていない構成では、外の人も
+//   127.0.0.1 に見えてしまうので、SECURITY_XFF_REQUIRED=1（既定）のときは「nginx から来たのに
+//   X-Forwarded-For が無い」通信を内部扱いにしない（unknown として数える）。
+const XFF_REQUIRED = env.SECURITY_XFF_REQUIRED !== "0";
 export function clientIp(req) {
+  const remote = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   const xff = String(req.headers["x-forwarded-for"] || "").split(",").map((s) => s.trim()).filter(Boolean);
-  const ip = xff.length ? xff[xff.length - 1] : (req.socket.remoteAddress || "");
-  return ip.replace(/^::ffff:/, "");
+  if (remote !== "127.0.0.1" && remote !== "::1") return remote;      // 直結（通常は無い）
+  if (xff.length) return xff[xff.length - 1].replace(/^::ffff:/, "");  // nginx が足した値
+  return "127.0.0.1";                                                   // 中の部品（nginx を通らない）
+}
+// 中の部品からの通信か（遮断・数え上げの対象外にする）。
+// nginx を通った通信は必ず X-Forwarded-For を持つ前提。持たないものは内部とみなす。
+// ただし User-Agent がブラウザ風（Mozilla/）で X-Forwarded-For が無い場合は nginx の設定漏れの疑いがあるので、
+// XFF_REQUIRED のときは内部扱いにせず "unknown" として数える（遮断はされない＝誤遮断は起きない）
+export function isInternal(req, ip) {
+  if (ip !== "127.0.0.1") return ALLOW.has(ip);
+  if (req.headers["x-forwarded-for"]) return false;
+  if (XFF_REQUIRED && /^Mozilla\//.test(String(req.headers["user-agent"] || ""))) return false;
+  return true;
 }
 
 // ---- DB へ書く（PostgREST にサーバー鍵で）。失敗しても入口は止めない
@@ -102,7 +120,7 @@ async function event(kind, severity, ip, req, detail, blockedUntil) {
 }
 
 async function block(ip, reason, ms, req, detail) {
-  if (ALLOW.has(ip)) return;
+  if (ALLOW.has(ip) || ip === "127.0.0.1") return;
   const until = Date.now() + ms;
   const cur = blocks.get(ip);
   blocks.set(ip, { until: Math.max(until, cur ? cur.until : 0), reason });
@@ -115,15 +133,16 @@ async function block(ip, reason, ms, req, detail) {
 // ---- DB と同期（店長が画面で解除したら効かせる。入口が再起動しても遮断を忘れない）
 async function syncBlocks() {
   lastDbSync = Date.now();
+  // DB が読めないとき（SQL を流している最中など）は、いま覚えている遮断をそのまま保つ
   const rows = await db("GET", `/security_block?select=ip,until,reason,released&until=gt.${encodeURIComponent(new Date().toISOString())}`);
   if (!Array.isArray(rows)) return;
-  const live = new Set();
   for (const r of rows) {
-    if (r.released) { blocks.delete(r.ip); continue; }
-    live.add(r.ip);
+    if (r.released) { blocks.delete(r.ip); continue; }                 // 店長が画面で解除した
     blocks.set(r.ip, { until: new Date(r.until).getTime(), reason: r.reason });
   }
-  for (const ip of [...blocks.keys()]) if (!live.has(ip)) blocks.delete(ip);   // 解除された・期限切れ
+  // DB に無い遮断は、期限が来るまで消さない（DB に書けなかっただけかもしれないため）
+  const now = Date.now();
+  for (const [ip, b] of blocks) if (b.until < now) blocks.delete(ip);
 }
 
 // ---- 入口から呼ぶ ------------------------------------------------------------
@@ -144,7 +163,7 @@ export function isBlocked(req, res) {
 export function inspect(req, claims) {
   if (!ON) return true;
   const ip = clientIp(req);
-  if (ALLOW.has(ip)) return true;
+  if (isInternal(req, ip)) return true;
   if (bump(`flood:${ip}`, RULE.flood.window) === RULE.flood.count) {
     block(ip, "flood", RULE.flood.block, req, { per_minute: RULE.flood.count });
   }
@@ -160,7 +179,7 @@ export function inspect(req, claims) {
 export function onLogin(req, statusCode, bodyText) {
   if (!ON) return;
   const ip = clientIp(req);
-  if (ALLOW.has(ip) || statusCode < 400) {
+  if (isInternal(req, ip) || statusCode < 400) {
     if (statusCode < 400) hits.delete(`login:${ip}`);   // 成功したら数え直し
     return;
   }
@@ -179,7 +198,7 @@ export function onLogin(req, statusCode, bodyText) {
 export function onBadToken(req) {
   if (!ON) return;
   const ip = clientIp(req);
-  if (ALLOW.has(ip)) return;
+  if (isInternal(req, ip)) return;
   const n = bump(`tok:${ip}`, RULE.badToken.window);
   if (n === 1 || n % 10 === 0) event("bad_token", "info", ip, req, { count: n });
   if (n === RULE.badToken.count) block(ip, "bad_token", RULE.badToken.block, req, { count: n });
@@ -191,7 +210,7 @@ export function onNotFound(req) {
   const url = String(req.url || "");
   if (!SCAN_RE.test(url)) return;
   const ip = clientIp(req);
-  if (ALLOW.has(ip)) return;
+  if (isInternal(req, ip)) return;
   const n = bump(`scan:${ip}`, RULE.scan.window);
   event("scan", n >= RULE.scan.count ? "high" : "warn", ip, req, { count: n });
   if (n === RULE.scan.count) block(ip, "scan", RULE.scan.block, req, { count: n });
