@@ -880,9 +880,12 @@
       $("ln_e").value = s2.line_enabled ? "1" : "0";
       $("ml_s").textContent = s2.has_mail_key ? "登録ずみです" : "まだ登録されていません";
       $("ln_s").textContent = s2.has_line_token ? "登録ずみです" : "まだ登録されていません";
+      $("ln_cs").textContent = s2.has_line_secret ? "登録ずみです" : "まだ登録されていません（これが無いとLINEからの受信が動きません）";
+      var tid = s2.tenant_id || (S.me && S.me.tenant_id) || "";
+      $("ln_url").value = tid ? location.origin + "/functions/v1/line-webhook?t=" + tid : "";
 
       var can = !!s2.can_edit;
-      ["ai_p", "ai_m", "ai_t", "ml_p", "ml_f", "ml_n", "ml_k", "ln_e", "ln_k", "aiSave"]
+      ["ai_p", "ai_m", "ai_t", "ml_p", "ml_f", "ml_n", "ml_k", "ln_e", "ln_k", "ln_c", "aiSave"]
         .forEach(function (id) { $(id).disabled = !can; });
       if (!can) {
         toast("この設定を変えられるのは、オーナーの方だけです");
@@ -914,12 +917,30 @@
           p_key: "line_channel_token", p_value: $("ln_k").value.trim()
         }));
       }
+      if ($("ln_c").value.trim()) {
+        jobs.push(rpcCall("secret_set", {
+          p_key: "line_channel_secret", p_value: $("ln_c").value.trim()
+        }));
+      }
       Promise.all(jobs).then(function () {
-        $("ml_k").value = ""; $("ln_k").value = "";
+        $("ml_k").value = ""; $("ln_k").value = ""; $("ln_c").value = "";
         toast("保存しました", "ok");
         loadAi();
       });
     });
+  });
+
+  $("ln_copy").addEventListener("click", function () {
+    var el = $("ln_url");
+    if (!el.value) { toast("法人IDがまだ分かりません。読み込み直してください", "ng"); return; }
+    el.select();
+    var done = false;
+    try { done = document.execCommand("copy"); } catch (e) { done = false; }
+    if (!done && navigator.clipboard) {
+      navigator.clipboard.writeText(el.value).then(function () { toast("コピーしました", "ok"); });
+      return;
+    }
+    toast(done ? "コピーしました" : "選択したので、長押しかCtrl+Cでコピーしてください", done ? "ok" : "ng");
   });
 
   /* ---- 送信箱 ---- */

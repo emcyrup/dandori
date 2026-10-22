@@ -328,6 +328,20 @@
           <input id="ln_k" type="password" placeholder="入れ直すときだけ入力してください">
           <span style="font-size:12px;color:var(--muted)" id="ln_s"></span>
         </label>
+        <label class="field"><span>チャネルシークレット（受信に必要）</span>
+          <input id="ln_c" type="password" placeholder="入れ直すときだけ入力してください">
+          <span style="font-size:12px;color:var(--muted)" id="ln_cs"></span>
+        </label>
+        <div class="field"><span>Webhook URL（LINE Developers に貼る）</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="ln_url" type="text" readonly style="flex:1;font-size:12px">
+            <button type="button" class="btn" id="ln_copy">コピー</button>
+          </div>
+          <span style="font-size:12px;color:var(--muted)">
+            LINE Developers → Messaging API 設定 → Webhook URL に貼り、「Webhookの利用」をオンにしてください。
+            末尾の <code>?t=…</code> は、この法人のIDです。
+          </span>
+        </div>
         <div class="box warn">
           <b>入れた鍵は、画面から読み出せません</b>
           鍵をしまう場所には、画面用の権限では1行も見えない設定をしています。
