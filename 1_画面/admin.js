@@ -357,12 +357,32 @@
           "<td>" + (m.service_apply ? "かける" : "かけない") + "</td>" +
           "<td>" + (m.tax_apply ? "かける" : "かけない") + "</td>" +
           "<td>" + (m.is_active ? "有効" : "停止") + "</td>" +
-          '<td><button class="btn ghost" style="padding:6px 12px" data-menu="' + m.id + '">編集</button></td>' +
+          '<td class="row" style="gap:6px"><button class="btn ghost" style="padding:6px 12px" data-menu="' + m.id + '">編集</button>' +
+            '<button class="btn ghost danger" style="padding:6px 12px" data-mdel="' + m.id + '">削除</button></td>' +
         "</tr>";
       }).join("");
 
     Array.prototype.forEach.call($("menuTable").querySelectorAll("button[data-menu]"), function (b) {
       b.addEventListener("click", function () { menuDialog(b.dataset.menu); });
+    });
+    Array.prototype.forEach.call($("menuTable").querySelectorAll("button[data-mdel]"), function (b) {
+      b.addEventListener("click", function () {
+        var m = S.menus.filter(function (x) { return x.id === b.dataset.mdel; })[0];
+        modal("<h2>「" + esc(m.name) + "」を消しますか？</h2>" +
+          '<p style="color:var(--muted);font-size:12.5px">これまでの伝票の明細はそのまま残ります（名前と金額は明細に写してあります）。' +
+          'いったん打てなくするだけなら、編集で「停止」にしてください。</p>' +
+          '<div class="row" style="margin-top:16px"><button class="btn ghost" id="m_cancel">やめる</button>' +
+          '<button class="btn danger" id="m_ok" style="flex:1">消す</button></div>',
+          function (root) {
+            root.querySelector("#m_cancel").addEventListener("click", closeModal);
+            root.querySelector("#m_ok").addEventListener("click", function () {
+              sb.from("night_menu").delete().eq("id", m.id).then(function (q) {
+                if (q.error) { fail(q.error); return; }
+                closeModal(); toast("消しました", "ok"); loadMenus();
+              });
+            });
+          });
+      });
     });
   }
 

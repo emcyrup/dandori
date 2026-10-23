@@ -853,9 +853,22 @@
           }).then(function (q) {
             ok.disabled = false;
             if (q.error) { fail(q.error); return; }
+            var closed = q.data, items = S.items.slice();
             closeModal();
-            toast("締めました　" + yen(q.data.total), "ok");
+            toast("締めました　" + yen(closed.total), "ok");
             switchView("hall");
+            modal("<h2>会計しました　" + yen(closed.total) + "</h2>" +
+              '<div class="field"><label for="rc_to">領収書の宛名</label>' +
+                '<input id="rc_to" value="' + esc(S.visit && S.visit.guest_name ? S.visit.guest_name + " 様" : "上様") + '"></div>' +
+              '<div class="row" style="margin-top:14px"><button class="btn ghost" id="m_cancel">閉じる</button>' +
+              '<button class="btn primary" id="m_rc" style="flex:1">領収書を印刷</button></div>',
+              function (root) {
+                root.querySelector("#m_cancel").addEventListener("click", closeModal);
+                root.querySelector("#m_rc").addEventListener("click", function () {
+                  window.DANDORI_RECEIPT.open({ store: S.store, visit: closed, items: items,
+                    to: root.querySelector("#rc_to").value.trim() || "上様" });
+                });
+              });
           });
         });
       }

@@ -737,8 +737,29 @@
           '<td class="row" style="gap:6px">' +
             '<button class="btn ghost" style="padding:6px 12px" data-edit="' + c.id + '">編集</button>' +
             '<button class="btn ghost" style="padding:6px 12px" data-cont="' + c.id + '">受け取り方</button>' +
+            '<button class="btn ghost danger" style="padding:6px 12px" data-del="' + c.id + '">削除</button>' +
           "</td></tr>";
       }).join("");
+
+    Array.prototype.forEach.call($("castTable").querySelectorAll("button[data-del]"), function (b) {
+      b.addEventListener("click", function () {
+        var c = S.casts.filter(function (x) { return x.id === b.dataset.del; })[0];
+        modal("<h2>" + esc(c.name) + " さんを消しますか？</h2>" +
+          '<p style="color:var(--muted);font-size:12.5px">出勤・売上・給与の記録がある方は消せません（そのときは「編集」で退店にしてください）。</p>' +
+          '<div class="row" style="margin-top:16px"><button class="btn ghost" id="m_cancel">やめる</button>' +
+          '<button class="btn danger" id="m_ok" style="flex:1">消す</button></div>',
+          function (root) {
+            root.querySelector("#m_cancel").addEventListener("click", closeModal);
+            root.querySelector("#m_ok").addEventListener("click", function () {
+              sb.rpc("night_cast_delete", { p_cast: c.id }).then(function (q) {
+                if (q.error) { fail(q.error); return; }
+                closeModal(); toast(c.name + " さんを消しました", "ok");
+                loadCasts().then(renderCasts);
+              });
+            });
+          });
+      });
+    });
 
     Array.prototype.forEach.call($("castTable").querySelectorAll("button[data-edit]"), function (b) {
       b.addEventListener("click", function () { castDialog(b.dataset.edit); });
@@ -804,10 +825,12 @@
 
   function castDialog(id) {
     var c = id ? S.casts.filter(function (x) { return x.id === id; })[0] : null;
-    var r1 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "nomination"; })[0]) || {};
-    var r2 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "sales"; })[0]) || {};
-    var r3 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "ratio"; })) || [];
-    var r4 = (c && (c.wage_rules || []).filter(function (r) { return r.type === "ratio_under"; })[0]) || {};
+    /* 新しく足すときは、在籍しているメンバーと同じ給与条件を入れておく（いちいち打たなくてよいように） */
+    var tpl = c || S.casts.filter(function (x) { return x.is_active && x.hourly_wage > 0; })[0] || null;
+    var r1 = (tpl && (tpl.wage_rules || []).filter(function (r) { return r.type === "nomination"; })[0]) || {};
+    var r2 = (tpl && (tpl.wage_rules || []).filter(function (r) { return r.type === "sales"; })[0]) || {};
+    var r3 = (tpl && (tpl.wage_rules || []).filter(function (r) { return r.type === "ratio"; })) || [];
+    var r4 = (tpl && (tpl.wage_rules || []).filter(function (r) { return r.type === "ratio_under"; })[0]) || {};
     var payBase = S.store && S.store.ratio_base === "pay";
     var ratioRows = "";
     for (var ri = 0; ri < 3; ri++) {
@@ -842,7 +865,8 @@
       '<div class="field"><label for="c_joined">雇入年月日</label>' +
         '<input id="c_joined" type="date" value="' + val("joined_on") + '"></div>' +
       '<div class="field"><label for="c_wage">基本時給（円）</label>' +
-        '<input id="c_wage" type="number" min="0" inputmode="numeric" value="' + (c ? c.hourly_wage : 0) + '"></div>' +
+        '<input id="c_wage" type="number" min="0" inputmode="numeric" value="' + (tpl ? tpl.hourly_wage : 0) + '"></div>' +
+      (!c && tpl ? '<p style="color:var(--muted);font-size:12px;margin:-4px 0 10px">' + esc(tpl.name) + ' さんと同じ給与条件を入れてあります。違うところだけ直してください。</p>' : "") +
       '<div class="field"' + (S.useNom ? "" : ' style="display:none"') + '><label for="c_n_from">本指名 ○本以上で時給（空欄ならスライドなし）</label>' +
         '<div class="row"><input id="c_n_from" type="number" min="0" placeholder="10" style="flex:1" value="' +
           (r1.from != null ? r1.from : "") + '">' +
