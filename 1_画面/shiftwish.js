@@ -369,8 +369,40 @@
 
   /* ------------------------------------------------------------ 起動 */
 
+  /* ------------------------------------------- 一般スタッフ：自分の希望だけ */
+
+  function loadMine() {
+    $("bossArea").classList.add("hidden");
+    $("mineArea").classList.remove("hidden");
+    K.rpc("wish_my_links", { p_store: K.S.store.id, p_base: baseUrl() }).then(function (rows) {
+      rows = rows || [];
+      if (!rows.length) {
+        $("mineList").innerHTML = K.empty(
+          "いま受付中の募集はありません。お店から案内があったら、ここに出ます。" +
+          "（名簿にご自分のログインが結びついていないときも、ここには出ません。店長にご確認ください）");
+        return;
+      }
+      var ST = { draft: "まだ出していません", submitted: "出しました（お店の確認待ち）",
+                 approved: "確定しました", returned: "お店から戻されました" };
+      $("mineList").innerHTML = rows.map(function (r) {
+        var open = r.period_status === "open";
+        return "<div class='panel' style='margin-bottom:10px'>" +
+          "<div class='row' style='justify-content:space-between;flex-wrap:wrap;gap:8px'>" +
+            "<div><b>" + K.md(r.period_from) + "〜" + K.md(r.period_to) + "</b>　" + esc(r.name) +
+              "<br><small>" + esc(ST[r.wish_status] || r.wish_status) +
+              (r.deadline_at ? "　締切 " + new Date(r.deadline_at).toLocaleString("ja-JP",
+                 { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "") +
+              (open ? "" : "　（受付は終わっています）") + "</small></div>" +
+            "<a class='btn " + (open ? "primary" : "ghost") + "' href='" + esc(r.url) + "'>" +
+              (open ? (r.wish_status === "draft" ? "希望を出す" : "希望を直す") : "確定を見る") + "</a>" +
+          "</div></div>";
+      }).join("");
+    });
+  }
+
   K.wireLogin();
   K.boot(function () {
+    if (!K.isBoss()) { loadMine(); return; }
     loadPeriods($("pSel").value || null);
   });
 

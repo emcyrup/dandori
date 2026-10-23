@@ -404,6 +404,8 @@
         '<option value="0"' + (m && !m.tax_apply ? " selected" : "") + ">かけない</option></select></div>" +
       '<div class="field"><label for="x_sort">並び順</label>' +
         '<input id="x_sort" type="number" value="' + (m ? m.sort_order : 99) + '"></div>' +
+      '<div class="field"><label for="x_group">グループ（ボトルのプルダウンの見出し。例：焼酎・リキュール）</label>' +
+        '<input id="x_group" value="' + esc((m && m.group_name) || "") + '"></div>' +
       (m ? '<div class="field"><label for="x_active">状態</label><select id="x_active">' +
         '<option value="1"' + (m.is_active ? " selected" : "") + ">有効</option>" +
         '<option value="0"' + (!m.is_active ? " selected" : "") + ">停止（打てなくする）</option></select></div>" : "") +
@@ -423,7 +425,8 @@
             back_rate: Number(v("x_rate")) || 0,
             service_apply: v("x_svc") === "1",
             tax_apply: v("x_tax") === "1",
-            sort_order: Number(v("x_sort")) || 99
+            sort_order: Number(v("x_sort")) || 99,
+            group_name: v("x_group").trim() || null
           };
           if (!payload.name) { toast("名前を入れてください", "err"); return; }
 

@@ -28,7 +28,9 @@
     /* 画面のJSが body の class を書きかえることがあるので、
        目印は <html> のほうに付けます。
        あとから描かれるボタンにも効くように、CSSで隠します。 */
-    "html:not(.is-boss) [data-boss]{display:none !important}";
+    "html:not(.is-boss) [data-boss]{display:none !important}" +
+    /* data-owner="1" は、オーナーだけ（店長＝manager には出しません） */
+    "html:not(.is-owner) [data-owner]{display:none !important}";
   (document.head || document.documentElement).appendChild(st);
 
   var CFG = window.DANDORI_CONFIG || {};
@@ -43,31 +45,36 @@
       .eq("auth_user_id", u.id).limit(1)
       .then(function (q) {
         var role = (q.data && q.data[0] && q.data[0].role) || "";
-        if (role === "owner" || role === "manager") {
+        if (role === "owner") {
           document.documentElement.classList.add("is-boss");
+          document.documentElement.classList.add("is-owner");
+        } else if (role === "manager") {
+          document.documentElement.classList.add("is-boss");
+          hideAll("button[data-owner]");
         } else {
-          hideAll();
+          hideAll("button[data-boss],button[data-owner]");
         }
       });
   }).catch(function () { hideAll(); });
 
   /* ------------------------------------------- 3. 店長以上でなければ消す */
-  function hideAll() {
-    run();
+  function hideAll(sel) {
+    sel = sel || "button[data-boss],button[data-owner]";
+    run(sel);
     /* タブがあとから描かれる画面のために、少しだけ見張ります */
     var n = 0;
     var t = setInterval(function () {
-      run();
+      run(sel);
       if (++n > 20) clearInterval(t);   // 約5秒で終わります
     }, 250);
   }
 
-  function run() {
+  function run(sel) {
     var nav = document.querySelector("nav.tabs");
     if (!nav) return;
     var gone = [];
 
-    Array.prototype.forEach.call(nav.querySelectorAll("button[data-boss]"), function (b) {
+    Array.prototype.forEach.call(nav.querySelectorAll(sel), function (b) {
       var v = b.getAttribute("data-view") || b.getAttribute("data-t") ||
               b.getAttribute("data-k") || "";
       if (v) gone.push(v);

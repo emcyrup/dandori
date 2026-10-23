@@ -195,3 +195,22 @@ update public.night_visit_item i
    set category = 'champagne'
   from public.night_menu m
  where m.id = i.menu_id and m.category = 'champagne' and i.category = 'bottle';
+
+-- ----------------------------------------------------------------------------
+--  2026-10-23：シフトの募集は一週間ごと（月〜土）。ボトルのプルダウンの見出し
+-- ----------------------------------------------------------------------------
+update public.store set wish_cycle = 'week6'
+ where name = 'Olivia' and tenant_id in (select id from public.tenant where name = 'Olivia')
+   and coalesce(wish_cycle, '') <> 'week6';
+
+update public.night_menu m set group_name = g.label
+  from (values
+    ('吉四六', '焼酎・リキュール'), ('壱岐ゴールド', '焼酎・リキュール'), ('黒霧島', '焼酎・リキュール'),
+    ('ダイヤメ', '焼酎・リキュール'), ('鍛高譚', '焼酎・リキュール'), ('柚子小町', '焼酎・リキュール'),
+    ('茉莉花', '焼酎・リキュール'), ('プルシア', '焼酎・リキュール'), ('ミスティア', '焼酎・リキュール'),
+    ('Six Eight Nine Napa Valley Red', 'ワイン'), ('Chablis', 'ワイン'),
+    ('山崎 ST', 'ウイスキー・ブランデー'), ('白州 ST', 'ウイスキー・ブランデー'), ('角瓶', 'ウイスキー・ブランデー'),
+    ('シーバス・ミズナラ 12年', 'ウイスキー・ブランデー'), ('ヘネシー VS', 'ウイスキー・ブランデー')
+  ) as g(name, label)
+ where m.name = g.name and m.category = 'bottle' and m.group_name is distinct from g.label
+   and m.tenant_id in (select id from public.tenant where name = 'Olivia');

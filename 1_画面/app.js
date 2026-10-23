@@ -389,6 +389,28 @@
 
   $("backBtn").addEventListener("click", function () { switchView("hall"); });
 
+  $("delVisitBtn").addEventListener("click", function () {
+    if (!S.visit) return;
+    var v = S.visit;
+    modal("<h2>この卓を消しますか？</h2>" +
+      "<p>" + esc(v.table_no || "") + "　" + esc(v.guest_name || "") + "　" + yen(v.total) + "</p>" +
+      '<p style="color:var(--bad);font-size:12.5px">注文の明細・ついたキャスト・支払いも、ぜんぶ消えます。元に戻せません。' +
+      (v.status === "open" ? "" : "<br>会計ずみの伝票を消せるのは店長以上の方だけです。") + "</p>" +
+      '<div class="row" style="margin-top:16px"><button class="btn ghost" id="m_cancel">やめる</button>' +
+      '<button class="btn danger" id="m_ok" style="flex:1">消す</button></div>',
+      function (root) {
+        root.querySelector("#m_cancel").addEventListener("click", closeModal);
+        root.querySelector("#m_ok").addEventListener("click", function () {
+          sb.rpc("night_visit_delete", { p_visit: v.id }).then(function (q) {
+            if (q.error) { fail(q.error); return; }
+            closeModal(); toast("卓を消しました", "ok");
+            S.visit = null;
+            switchView("hall"); loadHall();
+          });
+        });
+      });
+  });
+
   function openTicket(id) {
     switchView("ticket");
     loadTicket(id);
@@ -431,6 +453,7 @@
     var byCat = {};
     S.menus.forEach(function (m) { (byCat[m.category] = byCat[m.category] || []).push(m); });
     $("menuArea").innerHTML = CAT_ORDER.filter(function (c) { return byCat[c]; }).map(function (c) {
+      if (c === "bottle") return bottlePicker(byCat[c]);
       return '<div class="cat"><h3>' + (CAT_LABEL[c] || c) + "</h3>" +
         '<div class="menu-grid">' + byCat[c].map(function (m) {
           var back = m.back_amount > 0 ? "／バック" + yen(m.back_amount)
@@ -443,6 +466,7 @@
     Array.prototype.forEach.call($("menuArea").querySelectorAll(".menu-btn"), function (b) {
       b.addEventListener("click", function () { addItem(b.dataset.menu); });
     });
+    wireBottlePicker();
 
     // 明細
     $("itemList").innerHTML = S.items.length ? S.items.map(function (i) {
@@ -521,6 +545,78 @@
       $("qtyInput").value = 1;
       loadTicket(S.visit.id);
     });
+  }
+
+  /* ---------------------------------------------- ボトル：プルダウンで選ぶ
+     銘柄が多いので、ボタンを並べずにプルダウンにします。
+     見出し（焼酎・リキュール／ウイスキー…）は料金マスタの「グループ」。
+     無い銘柄は「＋ 銘柄を足す」でその場で足せます（料金マスタにも入ります） */
+  function bottlePicker(list) {
+    var groups = [], byG = {};
+    list.forEach(function (m) {
+      var g = m.group_name || "";
+      if (!byG[g]) { byG[g] = []; groups.push(g); }
+      byG[g].push(m);
+    });
+    var opt = function (m) {
+      return '<option value="' + m.id + '">' + esc(m.name) + "　" + yen(m.unit_price) + "</option>";
+    };
+    var html = '<option value="">銘柄をえらぶ…</option>' + groups.map(function (g) {
+      var o = byG[g].map(opt).join("");
+      return g ? '<optgroup label="' + esc(g) + '">' + o + "</optgroup>" : o;
+    }).join("");
+    return '<div class="cat"><h3>' + CAT_LABEL.bottle + "</h3>" +
+      '<div class="row" style="flex-wrap:wrap;gap:8px">' +
+        '<select id="btlSel" style="flex:1;min-width:200px">' + html + "</select>" +
+        '<button class="btn primary" id="btlAdd">入れる</button>' +
+        '<button class="btn ghost" id="btlNew">＋ 銘柄を足す</button>' +
+      "</div></div>";
+  }
+
+  function wireBottlePicker() {
+    var sel = $("btlSel");
+    if (!sel) return;
+    $("btlAdd").addEventListener("click", function () {
+      if (!sel.value) { toast("銘柄をえらんでください", "err"); return; }
+      addItem(sel.value);
+    });
+    $("btlNew").addEventListener("click", newBottleDialog);
+  }
+
+  function newBottleDialog() {
+    var groups = [];
+    S.menus.forEach(function (m) {
+      if (m.category === "bottle" && m.group_name && groups.indexOf(m.group_name) < 0) groups.push(m.group_name);
+    });
+    modal("<h2>銘柄を足す</h2>" +
+      '<p style="color:var(--muted);font-size:12.5px">料金マスタにも入ります。バック率などは、ほかのボトルと同じになります。</p>' +
+      '<div class="field"><label for="nb_name">銘柄</label><input id="nb_name" placeholder="例：魔王"></div>' +
+      '<div class="field"><label for="nb_price">料金（円）</label><input id="nb_price" type="number" min="0" step="100" placeholder="10000"></div>' +
+      '<div class="field"><label for="nb_group">グループ</label>' +
+        '<input id="nb_group" list="nb_groups" placeholder="焼酎・リキュール など（空でもOK）">' +
+        '<datalist id="nb_groups">' + groups.map(function (g) { return '<option value="' + esc(g) + '">'; }).join("") + "</datalist></div>" +
+      '<div class="row" style="margin-top:16px"><button class="btn ghost" id="m_cancel">やめる</button>' +
+      '<button class="btn primary" id="m_ok" style="flex:1">足して、この卓に入れる</button></div>',
+      function (root) {
+        root.querySelector("#m_cancel").addEventListener("click", closeModal);
+        root.querySelector("#m_ok").addEventListener("click", function () {
+          var name = root.querySelector("#nb_name").value.trim();
+          var price = Number(root.querySelector("#nb_price").value);
+          if (!name) { toast("銘柄を入れてください", "err"); return; }
+          if (!(price >= 0)) { toast("料金を入れてください", "err"); return; }
+          sb.rpc("night_menu_add_bottle", {
+            p_store: S.store.id, p_name: name, p_price: price,
+            p_group: root.querySelector("#nb_group").value.trim() || null
+          }).then(function (q) {
+            if (q.error) { fail(q.error); return; }
+            closeModal();
+            loadMasters().then(function () {
+              toast(name + " を足しました", "ok");
+              loadTicket(S.visit.id).then(function () { addItem(q.data.id); });
+            });
+          });
+        });
+      });
   }
 
   function addItem(menuId) {
@@ -657,8 +753,11 @@
   $("bottleAdd").addEventListener("click", function () {
     if (!S.visit) return;
     modal("<h2>キープを登録</h2>" +
-      '<div class="field"><label for="bk_name">銘柄</label>' +
-        '<input id="bk_name" placeholder="黒霧島（一升）"></div>' +
+      '<div class="field"><label for="bk_name">銘柄（候補から選ぶか、手で入れる）</label>' +
+        '<input id="bk_name" list="bk_names" placeholder="黒霧島（一升）">' +
+        '<datalist id="bk_names">' + S.menus.filter(function (m) {
+          return m.category === "bottle" || m.category === "champagne";
+        }).map(function (m) { return '<option value="' + esc(m.name) + '">'; }).join("") + "</datalist></div>" +
       '<div class="field"><label for="bk_kind">種類</label>' +
         '<input id="bk_kind" placeholder="焼酎"></div>' +
       '<div class="field"><label for="bk_loc">棚番</label>' +

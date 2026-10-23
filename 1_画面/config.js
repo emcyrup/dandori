@@ -16,7 +16,7 @@ window.DANDORI_CONFIG = {
   //   lineAddUrl  … 友だち追加のリンク（LINE Official Account Manager で出ます）
   //   lineQrImage … 同じアカウントのQRコード画像。サイトに一緒に置いてください
   //   どちらも空にすると、「LINEの登録」タブにQRは出ません。
-  lineAddUrl: "https://lin.ee/VGMVFXP",
+  lineAddUrl: "https://lin.ee/wGluf8QX",
   lineQrImage: "line_qr.png",
 
   // 業種。背景のかざり（ポップ／クール）の絵を、これで選びます。

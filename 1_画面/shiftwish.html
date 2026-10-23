@@ -36,7 +36,13 @@
   </header>
 
   <main>
-    <section>
+    <!-- 一般スタッフ：自分のシフト希望だけ -->
+    <section id="mineArea" class="hidden">
+      <h2 style="margin-top:0">シフト希望</h2>
+      <div id="mineList"></div>
+    </section>
+
+    <section id="bossArea">
       <div class="row" style="justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <div class="row">
           <select id="pSel"></select>

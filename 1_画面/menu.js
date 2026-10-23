@@ -51,6 +51,15 @@
     "hq.html": 1          /* キャスト・本部（多店舗） */
   };
 
+  /*  オーナーだけに出す画面（店長＝manager には出しません）。2026-10-23 のご要望 */
+  var OWNER_ONLY = {
+    "admin.html": 1,      /* 設定 */
+    "login.html": 1,      /* ログインの管理 */
+    "theme.html": 1,      /* 見た目 */
+    "teian.html": 1       /* こんなこともできます */
+  };
+  var ROLE = "";
+
   /*  業種ごとの、画面のならび（どのページから開いても、同じ目次が出ます） */
   var CAT = {
     night: {
@@ -274,6 +283,7 @@
         var items = g.files.filter(function (f) {
           if (!found[f]) return false;
           if (BOSS[f] && ROLEKNOWN && !ISBOSS) return false;
+          if (OWNER_ONLY[f] && ROLEKNOWN && ROLE !== "owner") return false;
           return true;
         });
         if (!items.length) return;
@@ -384,11 +394,12 @@
         return c.from("staff").select("role").eq("auth_user_id", u.id).limit(1)
           .then(function (q) {
             var role = (q.data && q.data[0] && q.data[0].role) || "";
+            ROLE = role;
             ISBOSS = (role === "owner" || role === "manager");
             ROLEKNOWN = true;
             draw();
-            /*  スタッフさんが、店長以上の画面を直接ひらいたとき */
-            if (!ISBOSS && BOSS[cur]) {
+            /*  スタッフさんが、店長以上の画面を直接ひらいたとき／店長がオーナーだけの画面をひらいたとき */
+            if ((!ISBOSS && BOSS[cur]) || (ROLE !== "owner" && OWNER_ONLY[cur])) {
               location.replace("index.html");
             }
           });
