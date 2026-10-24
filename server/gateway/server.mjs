@@ -21,6 +21,11 @@ import * as sec from "./security.mjs";
 const env = process.env;
 const PORT = Number(env.LISTEN_PORT || 8032);
 const SITE = path.resolve(import.meta.dirname, "..", "..", "1_画面");
+// 店舗のロゴ：1_画面/logos/<店舗名>.png があれば、左上の目次・ログイン画面・タブのアイコンに使う
+const LOGO = (() => {
+  const st = String(env.STORE || "").replace(/[^a-z0-9_-]/gi, "").toLowerCase();
+  return st && fs.existsSync(path.join(SITE, "logos", st + ".png")) ? "logos/" + st + ".png" : "";
+})();
 const JWT_SECRET = env.JWT_SECRET || "";
 const NO_VERIFY = new Set((env.NO_VERIFY_JWT || "line-webhook").split(",").map((s) => s.trim()).filter(Boolean));
 const UPSTREAM = {
@@ -69,7 +74,8 @@ function serveStatic(req, res, urlPath) {
       const body = fs.readFileSync(file, "utf8") +
         `\n// ---- 本番サーバー用（入口が自動で追記）\n` +
         `window.DANDORI_CONFIG.supabaseUrl = ${JSON.stringify(env.SITE_URL)};\n` +
-        `window.DANDORI_CONFIG.supabaseAnonKey = ${JSON.stringify(env.ANON_KEY)};\n`;
+        `window.DANDORI_CONFIG.supabaseAnonKey = ${JSON.stringify(env.ANON_KEY)};\n` +
+        (LOGO ? `window.DANDORI_CONFIG.logoImage = ${JSON.stringify(LOGO)};\n` : "");
       res.writeHead(200, { ...SITE_HEADERS, "Content-Type": type, "Content-Length": Buffer.byteLength(body) });
       return res.end(req.method === "HEAD" ? undefined : body);
     }

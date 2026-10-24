@@ -142,6 +142,11 @@
   "#sideVeil{position:fixed; inset:0; z-index:45; background:rgba(0,0,0,.45); display:none}" +
   "html.side-open #sideVeil{display:block}" +
   ".side-top{padding:16px 16px 12px; border-bottom:1px solid var(--line)}" +
+  /* お店のロゴ（PNG の黒い部分を、文字色で塗る。暗い見た目でも明るい見た目でも見える） */
+  ".side-logo{display:block;width:100%;aspect-ratio:var(--logo-ar,1);background:var(--ink);" +
+  "-webkit-mask:var(--logo-url) center/contain no-repeat;mask:var(--logo-url) center/contain no-repeat}" +
+  ".login-logo{display:block;width:min(260px,70%);aspect-ratio:var(--logo-ar,1);margin:0 auto 10px;background:var(--ink);" +
+  "-webkit-mask:var(--logo-url) center/contain no-repeat;mask:var(--logo-url) center/contain no-repeat}" +
   ".side-brand{display:block; font-size:11px; letter-spacing:.18em;" +
     "color:var(--gold); font-weight:700}" +
   ".side-kind{display:block; font-size:14.5px; font-weight:700; margin-top:3px;" +
@@ -249,6 +254,24 @@
     var brand = (document.title.split("｜")[0] || "だんどり").trim();
 
     var side = document.createElement("aside");
+
+    /* お店のロゴ（config.js の logoImage。本番の入口が logos/<店舗名>.png を見つけると自動で入る） */
+    var LOGO = (window.DANDORI_CONFIG || {}).logoImage || "";
+    if (LOGO) {
+      document.documentElement.style.setProperty("--logo-url", "url('" + LOGO.replace(/'/g, "%27") + "')");
+      var ico = document.querySelector("link[rel='icon']") || document.createElement("link");
+      ico.rel = "icon"; ico.type = "image/png"; ico.href = LOGO;
+      if (!ico.parentNode) document.head.appendChild(ico);
+      /* ログイン画面の見出しの上にも */
+      var lb = document.querySelector(".login-box h1");
+      if (lb && !document.querySelector(".login-logo")) {
+        var lg = document.createElement("span"); lg.className = "login-logo"; lg.setAttribute("role", "img");
+        lb.parentNode.insertBefore(lg, lb);
+      }
+      var im = new Image();
+      im.onload = function () { if (im.naturalHeight) document.documentElement.style.setProperty("--logo-ar", String(im.naturalWidth / im.naturalHeight)); };
+      im.src = LOGO;
+    }
     side.id = "sidemenu";
     app.insertBefore(side, app.firstChild);
 
@@ -276,8 +299,9 @@
 
     function draw() {
       var h = ["<div class='side-top'>" +
-               "<span class='side-brand'>DANDORI</span>" +
-               "<span class='side-kind'>" + esc(brand) + "</span></div><nav>"];
+               (LOGO ? "<span class='side-logo' role='img' aria-label='" + esc(brand) + "'></span>"
+                     : "<span class='side-brand'>DANDORI</span>" +
+                       "<span class='side-kind'>" + esc(brand) + "</span>") + "</div><nav>"];
       var no = 0;
       GROUPS.forEach(function (g) {
         var items = g.files.filter(function (f) {

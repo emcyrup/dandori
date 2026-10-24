@@ -99,7 +99,7 @@ const apps = [
   {
     ...common("gateway"), script: path.join(HERE, "gateway", "server.mjs"),
     env: {
-      LISTEN_PORT: env.LISTEN_PORT || "8032", SITE_URL, JWT_SECRET, ANON_KEY: need("ANON_KEY"),
+      LISTEN_PORT: env.LISTEN_PORT || "8032", SITE_URL, JWT_SECRET, ANON_KEY: need("ANON_KEY"), STORE,
       REST_PORT: PORTS.rest, AUTH_PORT: PORTS.auth, STORAGE_PORT: PORTS.storage, FN_BASE_PORT: String(PORTS.fnBase),
       NO_VERIFY_JWT: "line-webhook",
       // 見張り（不正アクセスの検知）。記録はサーバー鍵で DB に書く
