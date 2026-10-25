@@ -259,9 +259,11 @@
     var LOGO = (window.DANDORI_CONFIG || {}).logoImage || "";
     if (LOGO) {
       document.documentElement.style.setProperty("--logo-url", "url('" + LOGO.replace(/'/g, "%27") + "')");
-      var ico = document.querySelector("link[rel='icon']") || document.createElement("link");
-      ico.rel = "icon"; ico.type = "image/png"; ico.href = LOGO;
-      if (!ico.parentNode) document.head.appendChild(ico);
+      if (!document.querySelector("link[rel='icon']")) {   /* 入口がアイコンを入れていなければ、ロゴをタブのアイコンに */
+        var ico = document.createElement("link");
+        ico.rel = "icon"; ico.type = "image/png"; ico.href = LOGO;
+        document.head.appendChild(ico);
+      }
       /* ログイン画面の見出しの上にも */
       var lb = document.querySelector(".login-box h1");
       if (lb && !document.querySelector(".login-logo")) {

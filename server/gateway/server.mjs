@@ -26,6 +26,25 @@ const LOGO = (() => {
   const st = String(env.STORE || "").replace(/[^a-z0-9_-]/gi, "").toLowerCase();
   return st && fs.existsSync(path.join(SITE, "logos", st + ".png")) ? "logos/" + st + ".png" : "";
 })();
+// ホーム画面のアイコン：1_画面/logos/<店舗名>-icon.png（正方形・白地）があれば、
+// すべての HTML の <head> に apple-touch-icon と manifest を足し、/manifest.webmanifest を返す
+const STORE_ID = String(env.STORE || "").replace(/[^a-z0-9_-]/gi, "").toLowerCase();
+const ICON = STORE_ID && fs.existsSync(path.join(SITE, "logos", STORE_ID + "-icon.png")) ? "/logos/" + STORE_ID + "-icon.png" : "";
+const APP_NAME = env.APP_NAME || (STORE_ID ? STORE_ID.charAt(0).toUpperCase() + STORE_ID.slice(1) : "ナイトだんどり");
+const HEAD_EXTRA = ICON
+  ? `<link rel="apple-touch-icon" sizes="180x180" href="${ICON.replace(".png", "-180.png")}">` +
+    `<link rel="apple-touch-icon" href="${ICON}">` +
+    `<link rel="icon" type="image/png" href="${ICON}">` +
+    `<link rel="manifest" href="/manifest.webmanifest">` +
+    `<meta name="apple-mobile-web-app-title" content="${APP_NAME.replace(/[<>"&]/g, "")}">` +
+    `<meta name="application-name" content="${APP_NAME.replace(/[<>"&]/g, "")}">`
+  : "";
+const MANIFEST = ICON ? JSON.stringify({
+  name: APP_NAME, short_name: APP_NAME, start_url: "/index.html", scope: "/", display: "browser",
+  background_color: "#ffffff", theme_color: "#0E1319",
+  icons: [{ src: ICON, sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: ICON, sizes: "512x512", type: "image/png", purpose: "maskable" }]
+}) : "";
 const JWT_SECRET = env.JWT_SECRET || "";
 const NO_VERIFY = new Set((env.NO_VERIFY_JWT || "line-webhook").split(",").map((s) => s.trim()).filter(Boolean));
 const UPSTREAM = {
@@ -42,6 +61,7 @@ const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml",
   ".ico": "image/x-icon", ".json": "application/json; charset=utf-8", ".txt": "text/plain; charset=utf-8",
+  ".webmanifest": "application/manifest+json",
   ".woff": "font/woff", ".woff2": "font/woff2", ".webp": "image/webp", ".pdf": "application/pdf",
 };
 const SITE_HEADERS = {
@@ -60,6 +80,10 @@ const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-au
 // ---- 画面
 function serveStatic(req, res, urlPath) {
   if (req.method !== "GET" && req.method !== "HEAD") return text(res, 405, "Method Not Allowed");
+  if (MANIFEST && urlPath.split("?")[0] === "/manifest.webmanifest") {
+    res.writeHead(200, { ...SITE_HEADERS, "Content-Type": MIME[".webmanifest"], "Content-Length": Buffer.byteLength(MANIFEST) });
+    return res.end(req.method === "HEAD" ? undefined : MANIFEST);
+  }
   let rel;
   try { rel = decodeURIComponent(urlPath.split("?")[0]); } catch { return text(res, 400, "Bad Request"); }   // "%" だけ、などで落ちない
   if (rel.includes("\0")) { sec.onNotFound(req); return text(res, 404, "Not found"); }
@@ -69,6 +93,12 @@ function serveStatic(req, res, urlPath) {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { sec.onNotFound(req); return text(res, 404, "Not found"); }
     const type = MIME[path.extname(file).toLowerCase()] || "application/octet-stream";
+    if (HEAD_EXTRA && type.startsWith("text/html")) {
+      // ホーム画面のアイコン（iPhone は <head> の apple-touch-icon を読む）
+      const body = fs.readFileSync(file, "utf8").replace(/<head>/i, "<head>" + HEAD_EXTRA);
+      res.writeHead(200, { ...SITE_HEADERS, "Content-Type": type, "Content-Length": Buffer.byteLength(body) });
+      return res.end(req.method === "HEAD" ? undefined : body);
+    }
     if (path.basename(file) === "config.js") {
       // 接続先をこのサーバーに向ける（リポジトリの config.js はさわらない）
       const body = fs.readFileSync(file, "utf8") +
