@@ -176,6 +176,12 @@
   function loadDay() {
     var d = $("dayDate").value;
     if (!d || !S.store) return;
+    if (window.DANDORI_SALESDETAIL) {
+      window.DANDORI_SALESDETAIL.render($("dayVisits"), {
+        sb: sb, store: S.store, date: d,
+        onChange: function (r) { toast((r && r.message) || "消しました", "ok"); loadDay(); }
+      });
+    }
     Promise.all([
       sb.from("night_visit").select("status,total,paid_cash,paid_card,paid_credit")
         .eq("store_id", S.store.id).eq("business_date", d),

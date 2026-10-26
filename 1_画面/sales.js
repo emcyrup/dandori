@@ -339,10 +339,10 @@
     $("dailyTable").innerHTML =
       "<tr><th>営業日</th><th class='num'>組</th><th class='num'>人数</th><th class='num'>売上</th>" +
       "<th class='num'>客単価</th><th class='num'>現金</th><th class='num'>カード</th>" +
-      "<th class='num'>売掛</th><th>締め</th></tr>" +
+      "<th class='num'>売掛</th><th>締め</th><th></th></tr>" +
       rows.map(function (d) {
         return "<tr class='day-row' data-day='" + d.business_date + "' style='cursor:pointer' title='内訳を見る'>" +
-          "<td>" + mdw(d.business_date) + " <span style='color:var(--muted);font-size:11px'>内訳 ▸</span></td>" +
+          "<td>" + mdw(d.business_date) + "</td>" +
           "<td class='num'>" + d.visits + "</td>" +
           "<td class='num'>" + d.guests + "</td>" +
           "<td class='num' style='font-weight:600'>" + yen(d.sales) + "</td>" +
@@ -351,7 +351,8 @@
           "<td class='num'>" + yen(d.card) + "</td>" +
           "<td class='num'>" + (d.credit ? yen(d.credit) : "—") + "</td>" +
           "<td>" + (d.closed ? '<span class="tag settled">済</span>'
-                             : '<span class="tag open">未</span>') + "</td></tr>";
+                             : '<span class="tag open">未</span>') + "</td>" +
+          "<td><button class='btn ghost' style='padding:5px 12px'>詳細</button></td></tr>";
       }).join("");
     Array.prototype.forEach.call($("dailyTable").querySelectorAll("tr.day-row"), function (tr) {
       tr.addEventListener("click", function () { dayDetail(tr.dataset.day); });
@@ -369,66 +370,22 @@
   }
   function closeModal() { $("modalRoot").innerHTML = ""; }
 
-  var PAY = { cash: "現金", card: "カード", credit: "売掛", other: "その他" };
-
   function dayDetail(day) {
-    sb.rpc("night_sales_visits", { p_store: S.store.id, p_date: day }).then(function (q) {
-      if (q.error) { fail(q.error); return; }
-      var list = q.data || [];
-      var total = list.reduce(function (a, v) { return a + (v.status === "closed" ? v.total : 0); }, 0);
-      var html = "<h2 style='margin-top:0'>" + mdw(day) + " の内訳　" + list.length + " 卓　" + yen(total) + "</h2>" +
-        (list.length ? "" : "<p style='color:var(--muted)'>この日の伝票はありません。</p>") +
-        list.map(function (v) {
-          var t = v.entered_at ? new Date(v.entered_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
-          return "<div class='panel' style='margin-bottom:10px'>" +
-            "<div class='row' style='justify-content:space-between;flex-wrap:wrap;gap:6px'>" +
-              "<div><b>" + esc(v.table_no || "—") + "</b>　" + esc(v.guest || "") + "　" + v.head_count + "名　" +
-                "<span style='color:var(--muted);font-size:12px'>" + t + " 入店　" + esc(v.casts || "") + "</span>" +
-                (v.status === "open" ? ' <span class="tag open">会計前</span>' : "") + "</div>" +
-              "<div style='font-weight:700'>" + yen(v.total) + "</div></div>" +
-            "<table class='list' style='margin-top:6px;font-size:12.5px'>" +
-              v.items.map(function (i) {
-                return "<tr><td>" + esc(i.name) + (i.cast ? " <small style='color:var(--muted)'>（" + esc(i.cast) + "）</small>" : "") + "</td>" +
-                  "<td class='num'>×" + i.quantity + "</td><td class='num'>" + yen(i.amount) + "</td></tr>";
-              }).join("") +
-              "<tr><td colspan='2' style='color:var(--muted)'>小計 " + yen(v.subtotal) +
-                (v.service_charge ? "　サービス料 " + yen(v.service_charge) : "") + (v.tax ? "　税 " + yen(v.tax) : "") +
-                (v.discount ? "　値引き −" + yen(v.discount) : "") + (v.round_adj ? "　端数 " + yen(v.round_adj) : "") +
-                "</td><td class='num'>" + v.payments.map(function (p) { return (PAY[p.method] || p.method) + " " + yen(p.amount); }).join("／") + "</td></tr>" +
-            "</table>" +
-            "<div class='row' style='justify-content:flex-end;gap:6px;margin-top:6px'>" +
-              (v.status === "closed" ? "<button class='btn ghost' style='padding:6px 12px' data-rc='" + v.id + "'>領収書</button>" : "") +
-              "<button class='btn ghost danger' style='padding:6px 12px' data-vdel='" + v.id + "'>この伝票を消す</button>" +
-            "</div></div>";
-        }).join("") +
-        "<div class='row' style='margin-top:12px'><button class='btn ghost' id='m_close' style='flex:1'>閉じる</button></div>";
-      modal(html, function (root) {
+    modal("<h2 style='margin-top:0'>" + mdw(day) + " の売上の詳細</h2>" +
+      "<div id='dayVisits'></div>" +
+      "<div class='row' style='margin-top:12px'><button class='btn ghost' id='m_close' style='flex:1'>閉じる</button></div>",
+      function (root) {
         root.querySelector("#m_close").addEventListener("click", closeModal);
-        Array.prototype.forEach.call(root.querySelectorAll("button[data-rc]"), function (b) {
-          b.addEventListener("click", function () {
-            var v = list.filter(function (x) { return x.id === b.dataset.rc; })[0];
-            var to = window.prompt("領収書の宛名", v.guest ? v.guest + " 様" : "上様");
-            if (to === null) return;
-            window.DANDORI_RECEIPT.open({ store: S.store, visit: v, items: v.items, to: to.trim() || "上様" });
-          });
-        });
-        Array.prototype.forEach.call(root.querySelectorAll("button[data-vdel]"), function (b) {
-          b.addEventListener("click", function () {
-            var v = list.filter(function (x) { return x.id === b.dataset.vdel; })[0];
-            if (!window.confirm((v.table_no || "") + "　" + yen(v.total) + " の伝票を消します。注文・支払いも消え、元に戻せません。" +
-                (v.status === "closed" ? "その日を締めてあれば締めは外れます。" : "") + "よろしいですか？")) return;
-            sb.rpc("night_visit_delete", { p_visit: v.id }).then(function (q2) {
-              if (q2.error) { fail(q2.error); return; }
-              toast((q2.data && q2.data.message) || "消しました", "ok");
-              closeModal();
-              load(S.from, S.to);
-              dayDetail(day);
-            });
-          });
+        window.DANDORI_SALESDETAIL.render(root.querySelector("#dayVisits"), {
+          sb: sb, store: S.store, date: day,
+          onChange: function (r) {
+            toast((r && r.message) || "消しました", "ok");
+            load(S.from, S.to);
+          }
         });
       });
-    });
   }
+
 
   /* -------------------------------------------------------------- CSV */
 

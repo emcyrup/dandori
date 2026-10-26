@@ -214,3 +214,18 @@ update public.night_menu m set group_name = g.label
   ) as g(name, label)
  where m.name = g.name and m.category = 'bottle' and m.group_name is distinct from g.label
    and m.tenant_id in (select id from public.tenant where name = 'Olivia');
+
+-- ----------------------------------------------------------------------------
+--  2026-10-27：シャンパンにもバック 10%（「誰にバックを付けますか？」で選んだキャストに。040_champagne_back.sql）
+--    一度だけ入れる（あとで料金マスタで変えた率は、流し直しても戻さない）
+-- ----------------------------------------------------------------------------
+do $$
+declare t uuid;
+begin
+  select id into t from public.tenant where name = 'Olivia';
+  if t is null or exists (select 1 from public.audit_log where tenant_id = t and action = 'olivia_champagne_back') then return; end if;
+  update public.night_menu set back_rate = 10, back_amount = 0
+   where tenant_id = t and category = 'champagne' and back_rate = 0 and back_amount = 0;
+  insert into public.audit_log(tenant_id, action, target, detail)
+  values (t, 'olivia_champagne_back', 'night_menu', jsonb_build_object('back_rate', 10));
+end $$;
