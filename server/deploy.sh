@@ -98,7 +98,51 @@ check() {
                     (select count(*) from public.security_block where not released and until > now()) || ' か所'
                     from public.security_event where at > now() - interval '24 hours' and kind <> 'unblocked'" 2>/dev/null || true
   fi
+  line_check
   echo "== 完了: $SITE_URL/"
+}
+
+# LINE 連携の確認（鍵そのものは表示しない）
+#   ・シークレット／トークンが登録されているか、形が合っているか
+#   ・トークンが LINE に通るか（api.line.me/v2/bot/info。トークンは標準入力で curl に渡し、ps に出さない）
+#   ・LINE から最後に届いた時刻（シークレットが正しくないと、署名で断るので届かない）
+line_check() {
+  [ "$(psql -X -tAc "select to_regclass('public.tenant_secret') is not null" 2>/dev/null)" = "t" ] || return 0
+  echo "== LINE 連携"
+  psql -X -tA -F '|' -c "select t.id, t.name, coalesce(a.line_enabled, false),
+           (select value from public.tenant_secret x where x.tenant_id = t.id and x.key_name = 'line_channel_secret'),
+           (select count(*) from public.line_link l where l.tenant_id = t.id),
+           (select count(*) from public.line_link l where l.tenant_id = t.id and l.subject_id is not null),
+           coalesce((select to_char(max(l.last_seen_at) at time zone 'Asia/Tokyo', 'MM/DD HH24:MI') from public.line_link l where l.tenant_id = t.id), '—'),
+           (select count(*) from public.outbox o where o.tenant_id = t.id and o.channel = 'line' and o.status = 'failed' and o.created_at > now() - interval '7 days'),
+           (select count(*) from public.outbox o where o.tenant_id = t.id and o.channel = 'line' and o.status = 'sent' and o.created_at > now() - interval '7 days')
+      from public.tenant t left join public.tenant_ai a on a.tenant_id = t.id
+     where exists (select 1 from public.tenant_secret x where x.tenant_id = t.id and x.key_name like 'line_%')
+     order by t.created_at" 2>/dev/null |
+  while IFS='|' read -r tid tname enabled secret seen linked last failed sent; do
+    if [ -z "$secret" ]; then sec="なし（受信できません）"
+    elif [[ "$secret" =~ ^[0-9a-f]{32}$ ]]; then sec="あり（形 OK：32けた）"
+    else sec="あり（形が変です：LINE のチャネルシークレットは英数32けた。前後の空白や別の値が入っていないか）"; fi
+    tok="$(psql -X -tAc "select value from public.tenant_secret where tenant_id = '$tid' and key_name = 'line_channel_token'" 2>/dev/null)"
+    if [ -z "$tok" ]; then tk="なし（送信できません）"
+    else
+      info="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -s -m 10 -K - -w '\n%{http_code}' https://api.line.me/v2/bot/info 2>/dev/null || true)"
+      code="$(echo "$info" | tail -1)"; body="$(echo "$info" | head -n -1)"
+      case "$code" in
+        200) tk="あり・LINE に通りました（$(echo "$body" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log((j.displayName||"")+" "+(j.basicId||""))}catch(e){console.log("")}})')）" ;;
+        401) tk="あり・LINE が受け付けません（トークンがちがう／失効。発行し直して入れ直してください）" ;;
+        000) tk="あり・LINE に届きません（サーバーから api.line.me への通信が許可されていないかも）" ;;
+        *)   tk="あり・LINE の返事 $code" ;;
+      esac
+    fi
+    unset tok info body
+    echo "   $tname"
+    echo "     LINEで送る: $([ "$enabled" = "t" ] && echo 使う || echo '使わない（設定 → AI・送信 で「使う」に）')"
+    echo "     チャネルシークレット: $sec"
+    echo "     アクセストークン: $tk"
+    echo "     LINE から最後に届いた: $last（友だち $seen 人、うちアプリとつながった $linked 人）"
+    echo "     7日間の LINE 送信: 送れた $sent 件／失敗 $failed 件"
+  done
 }
 
 reboot_hook() {  # サーバー再起動後に自分で立ち上がるように（crontab が使えるときだけ）
