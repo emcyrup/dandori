@@ -51,14 +51,8 @@
     "hq.html": 1          /* キャスト・本部（多店舗） */
   };
 
-  /*  オーナーだけに出す画面（店長＝manager には出しません）。2026-10-23 のご要望 */
-  var OWNER_ONLY = {
-    "admin.html": 1,      /* 設定 */
-    "login.html": 1,      /* ログインの管理 */
-    "theme.html": 1,      /* 見た目 */
-    "teian.html": 1       /* こんなこともできます */
-  };
-  var ROLE = "";
+  /*  どの画面を使えるかは perm.js（設定 → 権限 で店長が決める）。perm.js が無い画面では上の BOSS で判断 */
+  var PERM = window.DANDORI_PERM || null;
 
   /*  業種ごとの、画面のならび（どのページから開いても、同じ目次が出ます） */
   var CAT = {
@@ -127,7 +121,7 @@
   };
 
   var ROLE = {
-    owner: "オーナー", manager: "店長", staff: "スタッフ", driver: "ドライバー"
+    owner: "店長", manager: "店長", staff: "スタッフ", driver: "スタッフ", cast: "スタッフ"
   };
 
   /* ------------------------------------------------------------ 見た目 */
@@ -308,9 +302,9 @@
       GROUPS.forEach(function (g) {
         var items = g.files.filter(function (f) {
           if (!found[f]) return false;
-          if (BOSS[f] && ROLEKNOWN && !ISBOSS) return false;
-          if (OWNER_ONLY[f] && ROLEKNOWN && ROLE !== "owner") return false;
-          return true;
+          if (!ROLEKNOWN) return !BOSS[f];
+          if (PERM) return PERM.can(f);
+          return !(BOSS[f] && !ISBOSS);
         });
         if (!items.length) return;
         if (g.t) h.push("<div class='side-g'>" + esc(g.t) + "</div>");
@@ -411,6 +405,20 @@
 
     /* ------------------------------------------- 店長以上かどうかを調べます */
     (function () {
+      /* perm.js があれば、そちらの結果を使う（設定 → 権限 の内容） */
+      if (PERM) {
+        PERM.ready(function (p) {
+          ISBOSS = p.role === "owner";
+          ROLEKNOWN = true;
+          draw();
+          if (p.role && !p.can(cur)) {
+            var first = null;
+            GROUPS.forEach(function (g) { g.files.forEach(function (f) { if (!first && found[f] && p.can(f)) first = f; }); });
+            if (first && first !== cur) location.replace(first);
+          }
+        });
+        return;
+      }
       var CF = window.DANDORI_CONFIG || {};
       if (!window.supabase || !CF.supabaseUrl) { ROLEKNOWN = true; return; }
       var c = window.supabase.createClient(CF.supabaseUrl, CF.supabaseAnonKey);
@@ -420,14 +428,11 @@
         return c.from("staff").select("role").eq("auth_user_id", u.id).limit(1)
           .then(function (q) {
             var role = (q.data && q.data[0] && q.data[0].role) || "";
-            ROLE = role;
             ISBOSS = (role === "owner" || role === "manager");
             ROLEKNOWN = true;
             draw();
-            /*  スタッフさんが、店長以上の画面を直接ひらいたとき／店長がオーナーだけの画面をひらいたとき */
-            if ((!ISBOSS && BOSS[cur]) || (ROLE !== "owner" && OWNER_ONLY[cur])) {
-              location.replace("index.html");
-            }
+            /*  スタッフさんが、店長だけの画面を直接ひらいたとき */
+            if (!ISBOSS && BOSS[cur]) location.replace("index.html");
           });
       }).catch(function () { ROLEKNOWN = true; });
     })();

@@ -204,9 +204,10 @@ Deno.serve(async (req) => {
           linked
             ? `${seen?.name ?? ""} さん\n追加ありがとうございます。\n\n${HELP}`
             : "追加ありがとうございます。\n\n" +
-              "はじめに、お店で「このLINEはだれのものか」を登録します。\n" +
-              "お手数ですが、お店にひとことお声がけください。\n\n" +
-              "登録がすむと、このトークからシフト希望が出せるようになります。",
+              "スタッフの方は、アプリとつなぐために、店長から聞いた「認証コード」（6けたの数字）を" +
+              "このトークに送ってください。\n" +
+              "つづけて、アプリのログインに使っているメールアドレスか、名簿のお名前を送ると完了です。\n\n" +
+              "つながると、このトークからシフト希望が出せ、給与明細やシフトのお知らせも届きます。",
         );
       }
       continue;
@@ -225,12 +226,21 @@ Deno.serve(async (req) => {
     }
 
     if (!linked) {
+      //  店長の認証コード → メールアドレスかお名前 で、スタッフのアカウントに結びつける
+      const { data: au, error: auErr } = await db.rpc("line_auth_message", {
+        p_tenant: tenantId,
+        p_line_user_id: userId,
+        p_text: text,
+      });
+      if (auErr) console.error("line_auth_message:", auErr.message);
       if (channelToken && ev.replyToken) {
         await reply(
           channelToken,
           ev.replyToken,
-          "お店の名簿とつながっていないようです。\n" +
-            "お手数ですが、このメッセージをお店にお見せください。",
+          au?.handled
+            ? String(au.reply ?? "")
+            : "まだアプリとつながっていません。\n" +
+              "スタッフの方は、店長から聞いた「認証コード」（6けたの数字）をこのトークに送ってください。",
         );
       }
       continue;

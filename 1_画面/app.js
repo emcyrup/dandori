@@ -137,7 +137,7 @@
   }
 
   function roleLabel(r) {
-    return { owner: "オーナー", manager: "店長", staff: "スタッフ", driver: "ドライバー" }[r] || r;
+    return { owner: "店長", manager: "店長", staff: "スタッフ", driver: "スタッフ", cast: "スタッフ" }[r] || r;
   }
 
   function showLogin() {

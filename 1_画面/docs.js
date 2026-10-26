@@ -260,10 +260,21 @@
       : "";
 
     $("lnHelp").innerHTML = qrHtml +
-      "<div class='box'><b>やりかた</b>" +
+      "<div class='box' id='lnCodeBox'><b>スタッフのLINEをアプリにつなぐ（認証コード）</b>" +
+      "<div class='row' style='align-items:center;gap:12px;margin:8px 0'>" +
+        "<span class='mono' id='lnCode' style='font-size:28px;letter-spacing:.18em;font-weight:700'>------</span>" +
+        "<button class='btn ghost small' id='lnCodeNew'>新しくする</button></div>" +
       "<ol>" +
-      "<li>スタッフさんに、お店のLINE公式アカウントを友だち追加してもらいます</li>" +
-      "<li>追加されると、下の一覧に出ます</li>" +
+      "<li>スタッフさんに、上のQRコードからお店のLINEを友だち追加してもらいます</li>" +
+      "<li>店長がこの認証コードを伝え、スタッフさんがLINEのトークに送ります</li>" +
+      "<li>つづけて、アプリのログインに使っているメールアドレスか、名簿のお名前を送ると、そのスタッフのアカウントにつながります</li>" +
+      "</ol>" +
+      "<p class='hint'>お客様がQRを読んで友だちになっても、認証コードを知らなければアプリにはつながりません。" +
+      "コードが広まったときは「新しくする」を押してください（前のコードは使えなくなります）。" +
+      "5回まちがえたLINEは、1時間受け付けを止めます。</p></div>" +
+      "<div class='box'><b>手で結びつける（コードを使わないとき）</b>" +
+      "<ol>" +
+      "<li>友だち追加されて、まだつながっていないLINEが下の一覧に出ます</li>" +
       "<li>名簿のだれかをえらんで、結びつけます</li>" +
       "</ol>" +
       "<p class='hint'>結びつけると、その方はLINEのトークに" +
@@ -273,6 +284,21 @@
       "「AI・送信」でLINEの鍵（チャネルシークレット／アクセストークン）が" +
       "入っているか、LINEの管理画面でWebhookのアドレスが入っているかを見てください。</p>" +
       "</div>";
+
+    function showCode(reset) {
+      K.rpc("line_auth_code_get", { p_reset: !!reset }).then(function (c) {
+        if (c && $("lnCode")) $("lnCode").textContent = c.code;
+        if (reset && c) K.toast("認証コードを新しくしました");
+      });
+    }
+    if (K.isBoss()) {
+      showCode(false);
+      $("lnCodeNew").addEventListener("click", function () {
+        if (window.confirm("認証コードを新しくします。前のコードは使えなくなります。よろしいですか？")) showCode(true);
+      });
+    } else if ($("lnCodeBox")) {
+      $("lnCodeBox").style.display = "none";
+    }
 
     K.rpc("line_pending", { p_store: K.S.store.id }).then(function (rows) {
       rows = rows || [];

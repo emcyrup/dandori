@@ -42,6 +42,7 @@
     <button role="tab" data-view="store" aria-selected="true">店舗の設定</button>
     <button role="tab" data-view="menu"  aria-selected="false">料金マスタ</button>
     <button role="tab" data-view="staff" aria-selected="false">スタッフ</button>
+    <button role="tab" data-view="perm"  aria-selected="false">権限</button>
     <button role="tab" data-view="imp"   aria-selected="false">過去データ取込</button>
     <button role="tab" data-view="ai"    aria-selected="false">AI・送信</button>
     <button role="tab" data-view="sec"   aria-selected="false">不正アクセス</button>
@@ -181,6 +182,23 @@
       </div>
     </section>
 
+
+    <!-- ---------- 権限（店長・スタッフが使える機能） ---------- -->
+    <section id="view-perm" class="hidden">
+      <div class="panel" style="max-width:760px">
+        <h2>使える機能</h2>
+        <p style="color:var(--muted);font-size:12.5px;margin-top:-4px">
+          ログインの権限は「店長（管理者）」と「スタッフ」の2つです。チェックを外した機能は、目次やタブに出なくなります。<br>
+          「店長だけ」の機能は、お金の全体像や設定にかかわるため、データベースでも店長だけに閉じています（スタッフには出せません）。
+          店長の「設定」「ログインの管理」は外せません。
+        </p>
+        <div class="scroll"><table class="list" id="permTable"></table></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn ghost" id="permReset">はじめの状態に戻す</button>
+          <button class="btn primary" id="permSave" style="flex:1">保存する</button>
+        </div>
+      </div>
+    </section>
 
     <!-- ---------- 過去データ取込 ---------- -->
     <section id="view-imp" class="hidden">

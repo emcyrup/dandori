@@ -111,7 +111,7 @@
           if (S.me.role !== "owner" && S.me.role !== "manager") {
             document.body.innerHTML =
               '<div style="padding:40px;text-align:center;color:#8FA1B3">' +
-              "設定画面は、店長以上の権限でご利用ください。</div>";
+              "設定画面は、店長（管理者）の権限でご利用ください。</div>";
             return;
           }
           $("meName").textContent = S.me.name;
@@ -159,7 +159,7 @@
   });
 
   function switchView(v) {
-    ["store", "menu", "staff", "imp", "ai", "sec"].forEach(function (n) {
+    ["store", "menu", "staff", "perm", "imp", "ai", "sec"].forEach(function (n) {
       $("view-" + n).classList.toggle("hidden", n !== v);
     });
     Array.prototype.forEach.call(document.querySelectorAll("nav.tabs button"), function (b) {
@@ -167,6 +167,7 @@
     });
     if (v === "menu") loadMenus();
     if (v === "staff") loadStaff();
+    if (v === "perm") loadPerm();
     if (v === "imp") loadImports();
     if (v === "ai") loadAi();
     if (v === "sec") loadSecurity();
@@ -480,7 +481,7 @@
         var s = S.stores.filter(function (x) { return x.id === id; })[0];
         return s ? s.name : "";
       };
-      var role = { owner: "オーナー", manager: "店長", staff: "スタッフ", driver: "ドライバー" };
+      var role = { owner: "店長", manager: "店長", staff: "スタッフ", driver: "スタッフ", cast: "スタッフ" };
 
       $("staffTable").innerHTML =
         "<tr><th>名前</th><th>メール</th><th>権限</th><th>見られる店舗</th><th>状態</th><th></th></tr>" +
@@ -492,7 +493,7 @@
             "<td style='font-size:12.5px;color:var(--muted)'>" + esc(s.email || "—") + "</td>" +
             "<td>" + (role[s.role] || s.role) + "</td>" +
             "<td style='font-size:12.5px'>" +
-              (s.role === "owner" || s.role === "manager" ? "全店舗"
+              (s.role === "owner" ? "全店舗"
                 : (mine.length ? esc(mine.join("、")) : "<span style='color:var(--bad)'>なし</span>")) + "</td>" +
             "<td>" + (s.is_active ? "有効" : "停止") + "</td>" +
             "<td>" + (s.id === S.me.id ? "" :
@@ -514,18 +515,17 @@
     modal("<h2>" + esc(s.name) + "</h2>" +
       '<div class="field"><label for="t_role">権限</label><select id="t_role"' +
         (isOwner ? "" : " disabled") + ">" +
-        ["owner", "manager", "staff", "driver"].map(function (r) {
-          var n = { owner: "オーナー（すべて）", manager: "店長（確定・設定まで）",
-                    staff: "スタッフ（伝票のみ）", driver: "ドライバー" }[r];
-          return '<option value="' + r + '"' + (s.role === r ? " selected" : "") + ">" + n + "</option>";
+        ["owner", "staff"].map(function (r) {
+          var n = { owner: "店長（管理者。すべて＋設定）", staff: "スタッフ（使える機能は「権限」タブで決めます）" }[r];
+          return '<option value="' + r + '"' + ((s.role === "owner" ? "owner" : "staff") === r ? " selected" : "") + ">" + n + "</option>";
         }).join("") + "</select>" +
-        (isOwner ? "" : '<span style="font-size:12px;color:var(--muted)">権限の変更はオーナーのみです</span>') +
+        (isOwner ? "" : '<span style="font-size:12px;color:var(--muted)">権限の変更は店長（管理者）だけです</span>') +
       "</div>" +
       '<div class="field"><label for="t_active">状態</label><select id="t_active">' +
         '<option value="1"' + (s.is_active ? " selected" : "") + ">有効</option>" +
         '<option value="0"' + (!s.is_active ? " selected" : "") + ">停止（ログインしても何も見えなくなる）</option>" +
       "</select></div>" +
-      '<div class="field"><label>見られる店舗（スタッフ・ドライバーのみ）</label>' +
+      '<div class="field"><label>見られる店舗（スタッフのみ）</label>' +
         S.stores.map(function (st) {
           return '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;padding:3px 0">' +
             '<input type="checkbox" data-st="' + st.id + '"> ' + esc(st.name) + "</label>";
@@ -543,9 +543,15 @@
         root.querySelector("#m_cancel").addEventListener("click", closeModal);
         root.querySelector("#m_ok").addEventListener("click", function () {
           var up = { is_active: root.querySelector("#t_active").value === "1" };
-          if (isOwner) up.role = root.querySelector("#t_role").value;
+          var newRole = isOwner ? root.querySelector("#t_role").value : null;
+          var roleJob = (newRole && newRole !== (s.role === "owner" ? "owner" : "staff"))
+            ? sb.rpc("staff_role_set", { p_staff: id, p_role: newRole })
+            : Promise.resolve({ error: null });
 
-          sb.from("staff").update(up).eq("id", id).then(function (q) {
+          roleJob.then(function (q0) {
+            if (q0.error) return q0;
+            return sb.from("staff").update(up).eq("id", id);
+          }).then(function (q) {
             if (q.error) { fail(q.error); return; }
             var want = Array.prototype.filter.call(
               root.querySelectorAll("input[data-st]"), function (cb) { return cb.checked; }
@@ -561,6 +567,58 @@
         });
       });
   }
+
+  /* ============================================================ 権限（使える機能） */
+
+  var PERMSET = null;
+
+  function loadPerm() {
+    var P = window.DANDORI_PERM;
+    if (!P) { $("permTable").innerHTML = "<tr><td>読みこめませんでした</td></tr>"; return; }
+    sb.rpc("role_features_get").then(function (q) {
+      if (q.error) { fail(q.error); return; }
+      P.features = (q.data && q.data.features) || {};
+      PERMSET = JSON.parse(JSON.stringify(P.features));
+      drawPerm();
+    });
+  }
+
+  function drawPerm() {
+    var P = window.DANDORI_PERM;
+    var canAs = function (k, r) { var keep = P.features; P.features = PERMSET; var v = P.can(k, r); P.features = keep; return v; };
+    $("permTable").innerHTML =
+      "<tr><th>機能</th><th style='text-align:center'>店長</th><th style='text-align:center'>スタッフ</th></tr>" +
+      P.list.map(function (f) {
+        var own = f.lock ? "<input type='checkbox' checked disabled>"
+          : "<input type='checkbox' data-r='owner' data-k='" + f.k + "'" + (canAs(f.k, "owner") ? " checked" : "") + ">";
+        var stf = f.boss ? "<span style='color:var(--muted);font-size:12px'>店長だけ</span>"
+          : "<input type='checkbox' data-r='staff' data-k='" + f.k + "'" + (canAs(f.k, "staff") ? " checked" : "") + ">";
+        return "<tr><td" + (f.sub ? " style='padding-left:28px;font-size:13px;color:var(--muted)'" : "") + ">" +
+          (f.sub ? "└ " : "") + esc(f.t) + "</td>" +
+          "<td style='text-align:center'>" + own + "</td><td style='text-align:center'>" + stf + "</td></tr>";
+      }).join("");
+    Array.prototype.forEach.call($("permTable").querySelectorAll("input[data-k]"), function (cb) {
+      cb.addEventListener("change", function () {
+        var r = cb.dataset.r;
+        PERMSET[r] = PERMSET[r] || {};
+        PERMSET[r][cb.dataset.k] = cb.checked;
+      });
+    });
+  }
+
+  $("permSave").addEventListener("click", function () {
+    sb.rpc("role_features_set", { p_features: PERMSET || {} }).then(function (q) {
+      if (q.error) { fail(q.error); return; }
+      if (window.DANDORI_PERM) window.DANDORI_PERM.features = (q.data && q.data.features) || {};
+      toast("保存しました。スタッフの方は、画面を開き直すと反映されます", "ok");
+      loadPerm();
+    });
+  });
+  $("permReset").addEventListener("click", function () {
+    PERMSET = { owner: {}, staff: {} };
+    drawPerm();
+    toast("はじめの状態にしました。「保存する」で確定します", "ok");
+  });
 
   /* ============================================================ 過去データ取込 */
 

@@ -30,7 +30,7 @@ export PGAPPNAME=dandori_fn
 case "${1:-}" in
   psql) psql ;;
   user-add)
-    [ $# -ge 4 ] || { echo "使い方: ./db.sh user-add メール パスワード 名前 [owner|manager|staff]"; exit 2; }
+    [ $# -ge 4 ] || { echo "使い方: ./db.sh user-add メール パスワード 名前 [owner（店長）|staff（スタッフ）]"; exit 2; }
     URL="http://127.0.0.1:${LISTEN_PORT:-8032}"
     body="$(node -e 'console.log(JSON.stringify({email:process.argv[1],password:process.argv[2],email_confirm:true}))' "$2" "$3")"
     r="$(curl -s -X POST "$URL/auth/v1/admin/users" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "apikey: $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d "$body")"
