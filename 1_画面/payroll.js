@@ -176,6 +176,20 @@
     return sb.from("night_cast").select("*").eq("store_id", S.store.id).order("name")
       .then(function (q) { S.casts = q.data || []; })
       .then(function () {
+        /*  個人情報（本名・生年月日・住所・電話・緊急連絡先）は別の表。店長と本人だけ読める */
+        return sb.from("night_cast_private").select("*").eq("store_id", S.store.id).then(function (q) {
+          var by = {};
+          (q.data || []).forEach(function (p) { by[p.cast_id] = p; });
+          S.casts.forEach(function (c) {
+            var p = by[c.id];
+            if (!p) return;
+            ["real_name", "birth_date", "address", "phone", "emergency_name", "emergency_phone"].forEach(function (k) {
+              c[k] = p[k];
+            });
+          });
+        }, function () {});
+      })
+      .then(function () {
         /*  指名のメニューが無いお店（Olivia など）では、画面から「指名」を隠します。 */
         return sb.from("night_menu").select("id").eq("store_id", S.store.id)
           .eq("category", "nomination").eq("is_active", true).limit(1)
@@ -724,6 +738,7 @@
         var rules = (c.wage_rules || []).map(function (r) {
           var cond = r.type === "nomination" ? "本指名" + r.from + "本以上"
                    : r.type === "ratio" ? "達成率" + r.from + "%以上"
+                   : r.type === "ratio_under" ? "達成率" + r.under + "%未満"
                    : "売上" + Number(r.from).toLocaleString() + "円以上";
           return cond + " → " + yen(r.wage) +
             (r.back_rate ? "・バック" + r.back_rate + "%〜" : "");
@@ -916,16 +931,19 @@
             var v = root.querySelector("#" + id).value.trim();
             return v === "" ? null : v;
           };
-          var payload = {
-            tenant_id: S.me.tenant_id,
-            store_id: S.store.id,
-            name: root.querySelector("#c_name").value.trim(),
+          /*  個人情報は night_cast_private に（店長と本人だけ読める表） */
+          var priv = {
             real_name: txt("c_real"),
             birth_date: txt("c_birth"),
             address: txt("c_addr"),
             phone: txt("c_phone"),
             emergency_name: txt("c_em_name"),
-            emergency_phone: txt("c_em_tel"),
+            emergency_phone: txt("c_em_tel")
+          };
+          var payload = {
+            tenant_id: S.me.tenant_id,
+            store_id: S.store.id,
+            name: root.querySelector("#c_name").value.trim(),
             job_type: txt("c_job") || "接客",
             joined_on: txt("c_joined"),
             hourly_wage: Number(root.querySelector("#c_wage").value) || 0,
@@ -937,11 +955,17 @@
           if (c) {
             var act = root.querySelector("#c_active");
             payload.is_active = act ? act.value === "1" : true;
-            q = sb.from("night_cast").update(payload).eq("id", c.id);
+            q = sb.from("night_cast").update(payload).eq("id", c.id).select("id").single();
           } else {
-            q = sb.from("night_cast").insert(payload);
+            q = sb.from("night_cast").insert(payload).select("id").single();
           }
           q.then(function (res) {
+            if (res.error) return res;
+            priv.cast_id = res.data.id;
+            priv.tenant_id = S.me.tenant_id;
+            priv.store_id = S.store.id;
+            return sb.from("night_cast_private").upsert(priv, { onConflict: "cast_id" });
+          }).then(function (res) {
             if (res.error) { fail(res.error); return; }
             closeModal(); toast("保存しました", "ok");
             loadCasts().then(function () {
